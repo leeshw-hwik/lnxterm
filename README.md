@@ -1,60 +1,92 @@
-# LnxTerm (Serial Terminal Application)
+# LnxTerm (Serial Terminal for Linux)
 
-ST-Link V3 Mini를 통한 임베디드 장치 디버그 및 로그 수집을 위한 전용 시리얼 터미널 GUI 프로그램입니다. VS Code Dark+ 스타일의 현대적인 디자인과 편리한 부가 기능을 제공합니다.
+ST-Link V3 Mini 기반 임베디드 장치 디버깅/로그 수집을 위한 시리얼 터미널 GUI입니다.
+현재 배포 기준 버전은 **v1.8.1** 입니다.
 
-## 주요 특징
+## 핵심 기능
 
-- **현대적인 UI**: VS Code Dark+ 테마를 적용하여 가독성이 높고 익숙한 개발 환경을 제공합니다.
-- **스마트 타임스탬프**: 모든 라인(빈 라인 포함)에 `[YYYY-MM-DD HH:MM:SS.mmm]` 형식의 정밀한 타임스탬프를 부여합니다.
-- **자동 재연결**: 연결이 끊겼을 때 3초마다 자동으로 재시도를 수행하여 디버깅 흐름을 끊지 않습니다.
-- **자동 로깅 및 경로 복사**: 기기 연결 시 `.env`에 설정된 경로로 타임스탬프가 포함된 로그 파일을 자동 생성합니다. **생성된 로그 파일의 절대 경로를 사이드바에서 바로 복사**할 수 있습니다.
-- **강력한 검색**: `Ctrl+F`를 통해 터미널 내용 내 실시간 검색 및 이동이 가능합니다.
-- **포트 점유 감지 (v1.7)**: 연결하려는 포트가 이미 사용 중이라면(Lockfile, TIOCEXCL 확인) 정확한 프로세스명과 PID를 경고로 알려줍니다.
-- **다중 인스턴스 지원**: 하나의 PC에서 여러 개의 LnxTerm을 동시에 실행하여 각각 다른 시리얼 포트에 독립적으로 연결할 수 있습니다.
-- **단독 실행 지원**: Python 설치 없이 실행 가능한 단독 배포본을 제공합니다.
+- 시리얼 포트 자동 탐색 (`/dev/ttyACM*`, `/dev/ttyUSB*`)
+- 연결 끊김 시 3초 주기 자동 재연결
+- 포트 점유 감지 강화 (Lockfile + `fuser`/`lsof` + `TIOCEXCL`)
+- 다중 인스턴스 실행 지원 (포트별 독립 실행)
+- 모든 라인 타임스탬프 기록 (`[YYYY-MM-DD HH:MM:SS.mmm]`)
+- 로그 파일 자동 생성 및 절대 경로 표시/복사
+- 문자열 통계(최대 10개) 카운팅/시작/정지/초기화
+- 문자열 통계 CSV 자동 기록
+- 열 순서: `문자열, 집계 시점, 누적 카운트, 대소문자 구분, 로그`
+- `로그` 열에는 매칭된 원문 1줄 전체 저장
+- 터미널 검색 (`Ctrl+F`), 하이라이트, 이전/다음 이동
+- One Dark Pro 기반 UI 테마
 
-## 설치 및 실행 방법
+## v1.8.1 변경 요약
 
-### 1. 단독 실행 파일 사용 (가장 빠른 방법)
-Python 설치 없이 바로 실행할 수 있는 버전입니다.
+- 문자열 통계 CSV 스키마 정합성 확정
+- 로그/통계 경로 복사 UX 개선
+- 사이드바 통계 조작 UX 개선(시작/정지/초기화/전체초기화)
+- One Dark Pro 색상 체계로 스타일 정리
+- 프로젝트 문서 파일명 규칙 정리 (`doc/*.MD`)
 
-1.  [GitHub Releases](https://github.com/leeshw-hwik/lnxterm/releases)에서 최신 버전의 `lnxterm` 바이너리를 다운로드합니다.
-2.  실행 권한을 부여합니다:
-    ```bash
-    chmod +x lnxterm
-    ```
-3.  프로그램을 실행합니다:
-    ```bash
-    ./lnxterm
-    ```
-4.  **여러 포트를 동시에 사용하려면** 프로그램을 여러 번 실행하세요:
-    ```bash
-    ./lnxterm &  # 첫 번째 인스턴스 (예: ttyACM0 연결)
-    ./lnxterm &  # 두 번째 인스턴스 (예: ttyUSB0 연결)
-    ```
+## 빠른 실행 (릴리스 바이너리)
 
-### 2. 소스 코드에서 실행
-1.  저장소를 클론합니다.
-2.  `run.sh` 스크립트를 사용하여 실행합니다:
-    ```bash
-    chmod +x run.sh
-    ./run.sh
-    ```
+1. [Releases](https://github.com/leeshw-hwik/lnxterm/releases)에서 최신 `lnxterm` 다운로드
+2. 실행 권한 부여
 
-## 개발자 가이드: 단독 실행 파일 빌드
-수정한 코드를 다시 단독 실행 파일로 빌드하려면 다음 스크립트를 사용하세요:
+```bash
+chmod +x lnxterm
+```
+
+3. 실행
+
+```bash
+./lnxterm
+```
+
+4. 다중 인스턴스 예시
+
+```bash
+./lnxterm &
+./lnxterm &
+```
+
+## 소스에서 실행
+
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+## 빌드
+
 ```bash
 ./build_exe.sh
 ```
 
-## 환경 설정 (.env)
-로그 디렉토리는 `.env` 파일에 기록됩니다. 직접 수정도 가능합니다.
+빌드 결과물: `dist/lnxterm`
+
+## 환경 설정 (`.env`)
+
 ```env
 LOG_DIR=/your/custom/log/path
 ```
 
+- `LOG_DIR` 미설정 시 실행 중 디렉토리 선택 후 `.env`에 저장
+- `.env`는 git에 커밋하지 않음
+
+## 문서
+
+- 요구사항: `doc/PROMPT.MD`
+- 구현 계획: `doc/IMPLEMENTATION_PLAN.MD`
+- 프로젝트 상태: `doc/PROJECT_STATUS.MD`
+- 워크스루: `doc/WALKTHROUGH.MD`
+
+## 릴리스 링크
+
+- v1.8.1: https://github.com/leeshw-hwik/lnxterm/releases/tag/v1.8.1
+- v1.8.1 바이너리: https://github.com/leeshw-hwik/lnxterm/releases/download/v1.8.1/lnxterm
+
 ## 라이선스
-이 프로젝트는 개인 디버깅 목적으로 제작되었으며, 협의 없이 상업적 이용을 금합니다.
+
+개인 디버깅 목적 사용을 기준으로 관리 중입니다.
 
 ---
 Created by Antigravity AI

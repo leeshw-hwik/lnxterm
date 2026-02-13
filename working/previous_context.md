@@ -15,6 +15,12 @@
 2. GitHub Release는 **신규 생성 없이** `v1.8.1` 본문만 마크다운 형식으로 수정
 3. 현재 커밋/푸시 대상 변경 파일은 `GEMINI.MD`, `working/previous_context.md`
 
+## 이번 세션 추가 반영 (README 최신화)
+1. `README.md`를 v1.8.1 기준으로 전면 업데이트
+- One Dark Pro 테마, 문자열 통계 CSV 스키마, 문서 경로(`doc/*.MD`) 반영
+- 실행/빌드/릴리스 링크를 현재 상태 기준으로 갱신
+2. `working/previous_context.md`에 이번 README 갱신 및 푸시 이력 추가
+
 ## 이번 세션 핵심 완료 항목
 1. `v1.8.1` 릴리스 상태 재검증 및 미완료 작업 재수행
 - 원인 분석 후 원격 push/태그 push 재실행 완료
