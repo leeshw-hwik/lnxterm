@@ -193,9 +193,15 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # 좌우 영역 분할 (마우스로 크기 조절 가능)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        self._splitter.setHandleWidth(7)
+        main_layout.addWidget(self._splitter, 1)
+
         # 사이드바
         self._sidebar = SidebarWidget()
-        main_layout.addWidget(self._sidebar)
+        self._splitter.addWidget(self._sidebar)
 
         # 오른쪽 영역 (터미널 + 검색 + 입력)
         right_panel = QWidget()
@@ -235,7 +241,10 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(input_frame)
 
-        main_layout.addWidget(right_panel, 1)
+        self._splitter.addWidget(right_panel)
+        self._splitter.setStretchFactor(0, 0)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([300, 980])
 
     def _setup_status_bar(self):
         """상태바 구성"""
@@ -437,6 +446,7 @@ class MainWindow(QMainWindow):
 
         # 로그 파일에 기록
         for timestamp, line in completed_lines:
+            self._sidebar.process_log_line_for_counters(line)
             self._log.write_line(line, timestamp)
 
     def _on_serial_error(self, error_msg: str):
@@ -464,7 +474,9 @@ class MainWindow(QMainWindow):
 
             # 로그에 기록
             for timestamp, line in completed_lines:
-                self._log.write_line(f"[TX] {line}", timestamp)
+                tx_line = f"[TX] {line}"
+                self._sidebar.process_log_line_for_counters(tx_line)
+                self._log.write_line(tx_line, timestamp)
 
             # 히스토리에 추가 (빈 명령은 히스토리에 넣지 않음) 및 입력 클리어
             if command:
@@ -489,7 +501,8 @@ class MainWindow(QMainWindow):
         try:
             self._log.start_logging(file_path)
             self._sidebar.set_logging_state(True)
-            self._sidebar.set_actual_log_filename(os.path.basename(file_path))
+            self._sidebar.set_log_started_time(self._log.started_at)
+            self._sidebar.set_actual_log_filename(file_path)
             self._status_log.setText(f"📝 {os.path.basename(file_path)}")
             self._terminal.append_system_message(f"로그 기록 시작: {file_path}\n")
         except Exception as e:

@@ -19,6 +19,7 @@ class LogManager:
         self._file_path: str = ""
         self._is_logging: bool = False
         self._mode: str = self.MODE_APPEND
+        self._started_at: str = ""
 
     @staticmethod
     def get_timestamp() -> str:
@@ -47,9 +48,10 @@ class LogManager:
         self._file_path = file_path
         self._file = open(file_path, self._mode, encoding="utf-8")
         self._is_logging = True
+        self._started_at = self.get_timestamp()
 
         # 로그 시작 헤더
-        header = f"{self.get_timestamp()} === 로그 기록 시작 ==="
+        header = f"{self._started_at} === 로그 기록 시작 ==="
         self._file.write(header + "\n")
         self._file.flush()
 
@@ -62,6 +64,7 @@ class LogManager:
             self._file.close()
         self._file = None
         self._is_logging = False
+        self._started_at = ""
 
     def write_line(self, line: str, timestamp: str = None) -> None:
         """타임스탬프 포함 한 라인 기록
@@ -95,6 +98,10 @@ class LogManager:
     def mode(self, value: str):
         if value in (self.MODE_APPEND, self.MODE_OVERWRITE):
             self._mode = value
+
+    @property
+    def started_at(self) -> str:
+        return self._started_at
 
     def __del__(self):
         """소멸자: 열린 파일 닫기"""

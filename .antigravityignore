@@ -2,3 +2,42 @@
 .env
 .env.*
 !.env.example
+
+# AI 접근 제외 경로
+log/
+build/
+dist/
+.venv/
+__pycache__/
+.git/
+reqs/
+
+# Python 산출물/캐시
+*.pyc
+*.pyo
+*.pyd
+*.spec
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE/에디터
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 일반 임시/캐시 파일
+.cache/
+tmp/
+temp/
+*.tmp
+*.bak
+*.log
+.DS_Store
+Thumbs.db

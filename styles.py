@@ -294,11 +294,11 @@ def get_main_stylesheet():
     }}
 
     QSplitter::handle:horizontal {{
-        width: 1px;
+        width: 7px;
     }}
 
     QSplitter::handle:vertical {{
-        height: 1px;
+        height: 7px;
     }}
 
     /* === 툴팁 === */
@@ -326,6 +326,11 @@ def get_main_stylesheet():
         padding: 0 6px;
         color: {c['text_secondary']};
         font-size: 11px;
+    }}
+
+    QGroupBox#logGroup {{
+        margin-top: 8px;
+        padding-top: 8px;
     }}
     """
 
