@@ -122,12 +122,12 @@ class SearchWidget(QFrame):
         # 일반 매치 하이라이트
         highlight_format = QTextCharFormat()
         highlight_format.setBackground(QColor(COLORS["bg_search"]))
-        highlight_format.setForeground(QColor("#ffffff"))
+        highlight_format.setForeground(QColor(COLORS["text_primary"]))
 
         # 현재 매치 하이라이트
         current_format = QTextCharFormat()
         current_format.setBackground(QColor(COLORS["bg_search_current"]))
-        current_format.setForeground(QColor("#ffffff"))
+        current_format.setForeground(QColor(COLORS["text_primary"]))
 
         # 추가 선택으로 하이라이트 적용
         extra_selections = []

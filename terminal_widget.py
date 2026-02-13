@@ -13,14 +13,16 @@ from styles import COLORS, get_terminal_stylesheet
 class TerminalWidget(QPlainTextEdit):
     """터미널 출력 위젯"""
 
-    MAX_LINES = 10000  # 최대 라인 수 (성능 유지)
+    DEFAULT_MAX_LINES = 1_000_000
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, max_lines: int = None):
         super().__init__(parent)
         self.setReadOnly(True)
         self.setStyleSheet(get_terminal_stylesheet())
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.setMaximumBlockCount(self.MAX_LINES)
+        self.setMaximumBlockCount(
+            self._normalize_max_lines(max_lines, self.DEFAULT_MAX_LINES)
+        )
 
         # 폰트 설정
         font = QFont("JetBrains Mono", 12)
@@ -36,6 +38,21 @@ class TerminalWidget(QPlainTextEdit):
         # 스크롤바 위치 변경 감지
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
         self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
+
+    def _normalize_max_lines(self, max_lines: int | None, fallback: int) -> int:
+        """최대 라인 수 유효성 검사"""
+        if not max_lines:
+            return fallback
+        try:
+            normalized = int(max_lines)
+        except (TypeError, ValueError):
+            return fallback
+        return normalized if normalized > 0 else fallback
+
+    def set_max_lines(self, max_lines: int) -> None:
+        """터미널 최대 버퍼 라인 수를 설정"""
+        normalized = self._normalize_max_lines(max_lines, self.DEFAULT_MAX_LINES)
+        self.setMaximumBlockCount(normalized)
 
     def _on_scroll_changed(self, value):
         """스크롤 위치 변경 시 자동 스크롤 해제/활성화"""

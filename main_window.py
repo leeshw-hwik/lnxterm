@@ -20,6 +20,7 @@ from terminal_widget import TerminalWidget
 from search_widget import SearchWidget
 from sidebar_widget import SidebarWidget
 from styles import (
+    COLORS,
     get_main_stylesheet, get_command_input_stylesheet,
     get_statusbar_connected_stylesheet, get_statusbar_disconnected_stylesheet
 )
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
     """메인 윈도우"""
 
     APP_TITLE = "LnxTerm - 시리얼 터미널"
+    APP_VERSION = "v1.8.0"
 
     def __init__(self):
         super().__init__()
@@ -130,6 +132,7 @@ class MainWindow(QMainWindow):
     def _setup_menu_bar(self):
         """메뉴바 구성"""
         menubar = self.menuBar()
+        menubar.setNativeMenuBar(False)
 
         # 파일 메뉴
         file_menu = menubar.addMenu("파일(&F)")
@@ -219,13 +222,17 @@ class MainWindow(QMainWindow):
 
         # 명령 입력 바
         input_frame = QFrame()
-        input_frame.setStyleSheet(f"background-color: #252526; border-top: 1px solid #3c3c3c;")
+        input_frame.setStyleSheet(
+            f"background-color: {COLORS['bg_sidebar']}; border-top: 1px solid {COLORS['border']};"
+        )
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(8, 4, 8, 4)
         input_layout.setSpacing(8)
 
         prompt_label = QLabel("❯")
-        prompt_label.setStyleSheet("color: #007acc; font-size: 16px; font-weight: bold; background-color: transparent;")
+        prompt_label.setStyleSheet(
+            f"color: {COLORS['accent']}; font-size: 16px; font-weight: bold; background-color: transparent;"
+        )
         input_layout.addWidget(prompt_label)
 
         self._command_input = CommandInput()
@@ -290,6 +297,9 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            self._terminal.set_max_lines(
+                settings.get("max_lines", TerminalWidget.DEFAULT_MAX_LINES)
+            )
             self._reconnect_timer.stop()
             self._manual_disconnect = False
 
@@ -405,11 +415,12 @@ class MainWindow(QMainWindow):
         self._terminal.append_system_message(f"연결 해제: {port_name}\n")
         self.setWindowTitle(self.APP_TITLE)
 
+        self._on_log_stop()
+        self._sidebar.set_stats_output_from_logfile("")
         if manual:
             # 수동 해제: 재연결 안 함, 로그 중지
             self._manual_disconnect = True
             self._reconnect_timer.stop()
-            self._on_log_stop()
         else:
             # 비정상 끊김: 자동 재연결 시도
             if self._auto_reconnect and self._last_settings:
@@ -446,7 +457,7 @@ class MainWindow(QMainWindow):
 
         # 로그 파일에 기록
         for timestamp, line in completed_lines:
-            self._sidebar.process_log_line_for_counters(line)
+            self._sidebar.process_log_line_for_counters(line, timestamp)
             self._log.write_line(line, timestamp)
 
     def _on_serial_error(self, error_msg: str):
@@ -475,7 +486,6 @@ class MainWindow(QMainWindow):
             # 로그에 기록
             for timestamp, line in completed_lines:
                 tx_line = f"[TX] {line}"
-                self._sidebar.process_log_line_for_counters(tx_line)
                 self._log.write_line(tx_line, timestamp)
 
             # 히스토리에 추가 (빈 명령은 히스토리에 넣지 않음) 및 입력 클리어
@@ -500,6 +510,7 @@ class MainWindow(QMainWindow):
         """로그 기록 시작"""
         try:
             self._log.start_logging(file_path)
+            self._sidebar.set_stats_output_from_logfile(file_path)
             self._sidebar.set_logging_state(True)
             self._sidebar.set_log_started_time(self._log.started_at)
             self._sidebar.set_actual_log_filename(file_path)
@@ -563,6 +574,7 @@ class MainWindow(QMainWindow):
             self,
             "LnxTerm 정보",
             "<h3>LnxTerm 시리얼 터미널</h3>"
+            f"<p>버전: {self.APP_VERSION}</p>"
             "<p>ST-Link V3 Mini 기반 임베디드 장치<br>"
             "디버그 및 로그 수집을 위한 시리얼 터미널</p>"
             "<p><b>기능:</b></p>"

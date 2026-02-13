@@ -1,47 +1,48 @@
 """
-VS Code Dark+ 테마 스타일 정의
+One Dark Pro 테마 스타일 정의
 """
 
-# VS Code Dark+ 색상 팔레트
+# One Dark Pro 계열 색상 팔레트
 COLORS = {
-    "bg_dark": "#1e1e1e",        # 메인 배경
-    "bg_sidebar": "#252526",      # 사이드바 배경
-    "bg_input": "#3c3c3c",        # 입력 필드 배경
-    "bg_hover": "#2a2d2e",        # 호버 배경
-    "bg_active": "#37373d",       # 활성 항목 배경
-    "bg_selection": "#264f78",    # 선택 배경
-    "bg_search": "#613a14",       # 검색 하이라이트
-    "bg_search_current": "#9e6a03",  # 현재 검색 하이라이트
-    "border": "#3c3c3c",          # 테두리
-    "border_focus": "#007acc",    # 포커스 테두리
+    "bg_dark": "#282C34",
+    "bg_sidebar": "#21252B",
+    "bg_input": "#2C313A",
+    "bg_hover": "#343B45",
+    "bg_active": "#3E4451",
+    "bg_selection": "#3E4451",
+    "bg_search": "#2C3E5A",
+    "bg_search_current": "#61AFEF",
+    "border": "#181A1F",
+    "border_focus": "#61AFEF",
 
-    "text_primary": "#d4d4d4",    # 기본 텍스트
-    "text_secondary": "#858585",  # 보조 텍스트
-    "text_disabled": "#5a5a5a",   # 비활성 텍스트
-    "text_link": "#3794ff",       # 링크
+    "text_primary": "#ABB2BF",
+    "text_secondary": "#8B95A8",
+    "text_disabled": "#4B5263",
+    "text_link": "#61AFEF",
 
-    "accent": "#007acc",          # 주요 강조 (버튼, 상태바)
-    "accent_hover": "#1b8ad4",    # 강조 호버
-    "accent_active": "#0062a3",   # 강조 활성
+    "accent": "#61AFEF",
+    "accent_hover": "#56B6C2",
+    "accent_active": "#3E7EAA",
 
-    "success": "#4ec9b0",         # 성공 / 연결됨
-    "warning": "#cca700",         # 경고
-    "error": "#f44747",           # 오류 / 연결 해제
-    "info": "#75beff",            # 정보
+    "success": "#98C379",
+    "warning": "#E5C07B",
+    "error": "#E06C75",
+    "error_hover": "#BE5046",
+    "info": "#56B6C2",
 
-    "terminal_green": "#4ec9b0",  # 터미널 수신 텍스트
-    "terminal_yellow": "#dcdcaa", # 타임스탬프
-    "terminal_blue": "#569cd6",   # 송신 텍스트
-    "terminal_red": "#f44747",    # 에러 텍스트
-    "terminal_white": "#d4d4d4",  # 일반 텍스트
+    "terminal_green": "#98C379",
+    "terminal_yellow": "#E5C07B",
+    "terminal_blue": "#61AFEF",
+    "terminal_red": "#E06C75",
+    "terminal_white": "#ABB2BF",
 
-    "scrollbar_bg": "#1e1e1e",
-    "scrollbar_handle": "#424242",
-    "scrollbar_handle_hover": "#4f4f4f",
+    "scrollbar_bg": "#21252B",
+    "scrollbar_handle": "#4B5363",
+    "scrollbar_handle_hover": "#5A6377",
 
-    "statusbar_bg": "#007acc",
-    "statusbar_text": "#ffffff",
-    "statusbar_disconnected_bg": "#6c6c6c",
+    "statusbar_bg": "#21252B",
+    "statusbar_text": "#ABB2BF",
+    "statusbar_disconnected_bg": "#282C34",
 }
 
 
@@ -179,7 +180,7 @@ def get_main_stylesheet():
     }}
 
     QPushButton#disconnectBtn:hover {{
-        background-color: #d73a3a;
+        background-color: {c['error_hover']};
     }}
 
     QPushButton#secondaryBtn {{
@@ -190,6 +191,24 @@ def get_main_stylesheet():
 
     QPushButton#secondaryBtn:hover {{
         background-color: {c['bg_hover']};
+    }}
+
+    QPushButton#copyBtn {{
+        background-color: {c['statusbar_disconnected_bg']};
+        color: {c['accent']};
+        border: 1px solid {c['accent']};
+        padding: 0px 2px;
+    }}
+
+    QPushButton#copyBtn:hover {{
+        background-color: {c['accent']};
+        color: #FFFFFF;
+    }}
+
+    QPushButton#copyBtn:disabled {{
+        background-color: {c['bg_input']};
+        color: {c['text_disabled']};
+        border-color: {c['border']};
     }}
 
     /* === 입력 필드 === */
