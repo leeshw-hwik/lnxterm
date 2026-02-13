@@ -1,0 +1,4 @@
+# 보안: .env 파일은 절대 AI로 전송하지 않음
+.env
+.env.*
+!.env.example
