@@ -13,3 +13,8 @@ log/
 # IDE
 .vscode/
 .idea/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec

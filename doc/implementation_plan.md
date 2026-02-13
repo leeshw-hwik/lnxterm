@@ -4,6 +4,7 @@ ST-Link V3 Mini를 통한 임베디드 장치 디버그/로그 수집용 시리�
 
 ## 기술 스택
 - Python 3 + PyQt6 + pyserial + python-dotenv
+- **PyInstaller**: 단독 실행 파일 빌드 도구
 
 ## 파일 구조
 
@@ -17,11 +18,12 @@ lnxterm/
 ├── serial_manager.py    # pyserial QThread 래핑
 ├── log_manager.py       # 로그 파일 관리
 ├── styles.py            # VS Code Dark+ QSS
-├── requirements.txt     # 의존성 (PyQt6, pyserial, python-dotenv)
+├── requirements.txt     # 의존성 (PyQt6, pyserial, python-dotenv, pyinstaller)
 ├── run.sh               # 실행 스크립트
+├── build_exe.sh         # 단독 실행 파일 빌드 스크립트
 ├── .env                 # LOG_DIR 환경변수 (git/AI 제외)
 ├── .env.example         # .env 예제
-├── .gitignore           # git 제외 목록
+├── .gitignore           # git 제외 목록 (build/, dist/ 등 포함)
 ├── .antigravityignore   # AI 전송 제외 목록
 ├── GEMINI.MD            # 프로젝트 규칙
 └── doc/
@@ -40,10 +42,10 @@ lnxterm/
 | 로그 관리 | `.env`의 `LOG_DIR`에 `lnxterm_YYYYMMDD_HHMMSS.log` 자동 저장 |
 | 검색 | Ctrl+F 검색, 하이라이트, 이전/다음 이동 |
 | 명령 입력 | 하단 입력바, Enter 전송, 히스토리 (↑↓), 빈 엔터 허용 |
+| **단독 배포** | `dist/lnxterm` 실행 파일 하나로 모든 기능 제공 |
 
 ## 변경 이력
-- **v1.0**: 초기 구현 (시리얼, 터미널, 검색, 로그, 명령)
-- **v1.1**: LF 종료, 포커스 수정, 빈 엔터, CR 제거
-- **v1.2**: TX 접두사 제거, 날짜 타임스탬프, 자동 재연결, 자동 로그
-- **v1.3**: 자동 타임스탬프 파일명, 연결 시 필수 로그 지정
-- **v1.4**: `.env` LOG_DIR, `lnxterm_날짜_시간.log` 자동 생성, 마크다운 재배치, 보안 설정
+- **v1.0 - v1.3**: 기본 기능 및 UI 개선
+- **v1.4**: `.env` 설정 자동화 및 마크다운 재배치
+- **v1.5**: GitHub 저장소 공개 및 README 작성
+- **v1.6**: 단독 실행 파일(Executable) 빌드 환경 구축 및 배포 가이드 작성
