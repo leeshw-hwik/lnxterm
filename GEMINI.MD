@@ -10,3 +10,4 @@
 - 프로젝트 상태 보고서는 `doc/PROJECT_STATUS.MD` 파일에 기록한다.
 - `.env` 파일은 절대 AI로 전송하지 않는다 (`.antigravityignore` 등록).
 - `.env` 파일은 git에 포함하지 않는다 (`.gitignore` 등록).
+- github에 원격 반영이 막힌 원인이 이 샌드박스 네트워크 제한일 가능성이 있으니 실패 할 경우, 외부 권한으로 push/release를 다시 시도해 본다.
