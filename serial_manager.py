@@ -5,6 +5,8 @@
 """
 
 import glob
+import subprocess
+import os
 import serial
 from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
 
@@ -98,6 +100,68 @@ class SerialManager:
                 continue
         return ports
 
+    @staticmethod
+    def check_port_in_use(port: str) -> list[dict]:
+        """포트를 점유 중인 프로세스 목록 반환 (fuser + Lockfile)
+        
+        Returns:
+            list[dict]: [{"pid": 12345, "name": "minicom"}, ...]
+        """
+        processes = []
+        port_name = os.path.basename(port)
+        
+        # 1. Lockfile 확인 (/var/lock/LCK..ttyXXX)
+        lockfile = f"/var/lock/LCK..{port_name}"
+        if os.path.exists(lockfile):
+            try:
+                with open(lockfile, 'r') as f:
+                    content = f.read().strip()
+                    # LCK 파일 내용은 보통 PID (텍스트 12345 혹은 바이너리 4바이트)
+                    # 텍스트인 경우
+                    if content.isdigit():
+                        pid = int(content)
+                    else:
+                        # 바이너리일 수도 있음 (HDB uucp lock style), 일단 패스
+                        pid = None
+
+                    if pid:
+                        try:
+                            with open(f"/proc/{pid}/comm", "r") as cf:
+                                name = cf.read().strip()
+                            processes.append({"pid": pid, "name": f"{name} (Lockfile)"})
+                        except (FileNotFoundError, PermissionError):
+                            # PID가 없으면(죽은 프로세스) Lockfile이 낡은 것일 수 있음
+                            pass
+            except Exception:
+                pass
+
+        # 2. fuser/lsof 확인 (기존 로직)
+        try:
+            result = subprocess.run(
+                ["fuser", port],
+                capture_output=True, text=True, timeout=1
+            )
+            pids_str = result.stderr.strip().replace(port + ":", "").strip()
+            if pids_str:
+                for pid_str in pids_str.split():
+                    pid_str = pid_str.strip().rstrip("m").rstrip("e")
+                    if not pid_str.isdigit():
+                        continue
+                    pid = int(pid_str)
+                    # 중복 제거
+                    if any(p['pid'] == pid for p in processes):
+                        continue
+                    try:
+                        with open(f"/proc/{pid}/comm", "r") as f:
+                            name = f.read().strip()
+                    except (FileNotFoundError, PermissionError):
+                        name = "(알 수 없음)"
+                    processes.append({"pid": pid, "name": name})
+        except Exception:
+            pass
+            
+        return processes
+
     def connect(
         self,
         port: str,
@@ -118,6 +182,7 @@ class SerialManager:
             parity=parity,
             stopbits=stopbits,
             timeout=timeout,
+            exclusive=True  # pyserial 3.0+ 지원: TIOCEXCL (배타적 접근)
         )
 
     def disconnect(self) -> None:

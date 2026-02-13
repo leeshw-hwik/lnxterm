@@ -274,8 +274,8 @@ class MainWindow(QMainWindow):
 
     # === 시리얼 연결 ===
 
-    def _on_connect(self, settings: dict):
-        """시리얼 포트 연결"""
+    def _on_connect(self, settings: dict, silent: bool = False):
+        """시리얼 포트 연결. silent=True이면 다이얼로그 없이 경고만 출력."""
         # LOG_DIR 확인 - 미설정시 다이얼로그
         if not self._ensure_log_dir():
             return
@@ -284,8 +284,31 @@ class MainWindow(QMainWindow):
             self._reconnect_timer.stop()
             self._manual_disconnect = False
 
+            # 포트 점유 프로세스 확인
+            port = settings["port"]
+            in_use = SerialManager.check_port_in_use(port)
+            if in_use:
+                procs_info = "\n".join(
+                    [f"  • {p['name']} (PID: {p['pid']})" for p in in_use]
+                )
+                self._terminal.append_system_message(
+                    f"⚠️  경고: {port} 가 다음 프로세스에 의해 사용 중입니다:\n"
+                    f"{procs_info}\n"
+                )
+                if not silent:
+                    reply = QMessageBox.warning(
+                        self, "포트 사용 중",
+                        f"{port} 포트가 이미 사용 중입니다:\n\n{procs_info}\n\n"
+                        f"그래도 연결을 시도하시겠습니까?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        self._terminal.append_system_message("연결 취소됨.\n")
+                        return
+
             self._serial.connect(
-                port=settings["port"],
+                port=port,
                 baudrate=settings["baudrate"],
                 databits=settings["databits"],
                 parity=settings["parity"],
@@ -393,7 +416,7 @@ class MainWindow(QMainWindow):
 
         self._terminal.append_system_message("재연결 시도 중...\n")
         try:
-            self._on_connect(self._last_settings)
+            self._on_connect(self._last_settings, silent=True)
         except Exception:
             # 실패 시 다시 3초 후 재시도
             self._terminal.append_system_message("재연결 실패, 3초 후 다시 시도...\n")
