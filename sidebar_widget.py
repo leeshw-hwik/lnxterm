@@ -1,7 +1,9 @@
 """
-사이드바 위젯: 포트 설정, 연결 제어, 로그 파일 설정
+사이드바 위젯: 포트 설정, 연결 제어, 로그 파일
 """
 
+import serial.tools.list_ports
+import os
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QGroupBox, QFormLayout,
@@ -110,6 +112,9 @@ class SidebarWidget(QFrame):
             "background-color: transparent; color: #808080; font-size: 11px;"
         )
         self._log_actual_label.setWordWrap(True)
+        self._log_actual_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         log_layout.addWidget(self._log_actual_label)
 
         layout.addWidget(log_group)
@@ -164,15 +169,19 @@ class SidebarWidget(QFrame):
             }
             self.connect_requested.emit(settings)
 
-    def set_actual_log_filename(self, filename: str):
-        """현재 로그 파일명 표시"""
-        if filename:
-            self._log_actual_label.setText(f"▶ {filename}")
+    def set_actual_log_filename(self, filepath: str):
+        """실제 생성된 로그 파일 경로 표시"""
+        if filepath:
+            # 절대 경로 표시
+            abs_path = os.path.abspath(filepath)
+            self._log_actual_label.setText(f"▶ {abs_path}")
+            self._log_actual_label.setToolTip(abs_path)
             self._log_actual_label.setStyleSheet(
                 "background-color: transparent; color: #4ec9b0; font-size: 11px;"
             )
         else:
             self._log_actual_label.setText("로그 대기 중...")
+            self._log_actual_label.setToolTip("")
             self._log_actual_label.setStyleSheet(
                 "background-color: transparent; color: #808080; font-size: 11px;"
             )

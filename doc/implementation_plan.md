@@ -16,7 +16,7 @@ ST-Link V3 Mini를 통한 임베디드 장치 디버그/로그 수집용 시리�
 | **포트 점유 감지** | **Lockfile** + `fuser`/`lsof` + `TIOCEXCL`로 확실한 점유 감지 (v1.7) |
 | **다중 인스턴스** | 싱글톤 제한 없이 들여쓰기 여러 창 동시 실행 가능 |
 | 터미널 출력 | `[YYYY-MM-DD HH:MM:SS.mmm]` 타임스탬프, TX(파란)/RX(초록) 색상 |
-| 로그 관리 | `.env`의 `LOG_DIR`에 `lnxterm_YYYYMMDD_HHMMSS.log` 자동 저장 |
+| 로그 관리 | `LOG_DIR`에 자동 저장, **절대 경로 표시 및 복사 가능**(v1.7.2) |
 | 검색 | Ctrl+F 검색, 하이라이트, 이전/다음 이동 |
 | 명령 입력 | 하단 입력바, Enter 전송, 히스토리 (↑↓), 빈 엔터 허용 |
 | 배포 | GitHub Release를 통한 단독 바이너리 제공 |
@@ -27,3 +27,4 @@ ST-Link V3 Mini를 통한 임베디드 장치 디버그/로그 수집용 시리�
 - **v1.5**: GitHub 저장소 공개 및 README 작성
 - **v1.6**: 단독 실행 파일 빌드 및 GitHub Release 배포
 - **v1.7**: 포트 점유 프로세스 감지 경고, 다중 인스턴스 지원 (Lockfile/TIOCEXCL)
+- **v1.7.2**: 로그 파일 절대 경로 표시 및 복사 기능 추가
