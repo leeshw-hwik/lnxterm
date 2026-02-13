@@ -3,77 +3,70 @@
 ## 작성 시각
 - 2026-02-14 (KST)
 
-## 현재 기준 상태
-- Branch: `master`
-- HEAD: `de01d6c` (`docs: update uppercase project docs for v1.8.1`)
-- Tag: `v1.8.1`
-- Origin/master: `de01d6c` (push 완료)
-- 참고: 워킹트리에 `GEMINI.MD` 수정사항 1건이 남아 있음 (의도적으로 미처리)
+## 세션 목표
+- `.env` 참조 문제 해결
+- 자동 재연결 타이머 환경변수화
+- 로그/문자열 통계 파일의 세션 지속성 보강
+- 프로젝트 문서(`doc/*.MD`) 최신화
+- `v1.8.2` 커밋/푸시/릴리스
 
-## 이번 커밋 직전 추가 반영 사항
-1. `working/previous_context.txt`는 제거하고 `working/previous_context.md` 단일 파일로 정리
-2. GitHub Release는 **신규 생성 없이** `v1.8.1` 본문만 마크다운 형식으로 수정
-3. 현재 커밋/푸시 대상 변경 파일은 `GEMINI.MD`, `working/previous_context.md`
+## 이번 세션 코드 변경 핵심
+1. `.env` 탐색 경로 개선 (`main_window.py`)
+- 기존: 소스 파일 경로 기준 고정 탐색
+- 변경: 실행파일 디렉토리 우선 탐색 + fallback
+  1) `sys.executable` 디렉토리 (frozen 실행)
+  2) 현재 작업 디렉토리
+  3) 소스 디렉토리
+- 시작 메시지에 실제 `.env` 경로 출력
 
-## 이번 세션 추가 반영 (README 최신화)
-1. `README.md`를 v1.8.1 기준으로 전면 업데이트
-- One Dark Pro 테마, 문자열 통계 CSV 스키마, 문서 경로(`doc/*.MD`) 반영
-- 실행/빌드/릴리스 링크를 현재 상태 기준으로 갱신
-2. `working/previous_context.md`에 이번 README 갱신 및 푸시 이력 추가
+2. 자동 재연결 주기 환경변수화 (`main_window.py`)
+- `RECONNECT_INTERVAL_MS` 우선
+- `RECONNECT_INTERVAL_SEC` 보조
+- 미설정/오입력 시 기본 `3000ms` 적용
+- 재연결 대기/실패 메시지에 설정된 주기 표시
 
-## 이번 세션 핵심 완료 항목
-1. `v1.8.1` 릴리스 상태 재검증 및 미완료 작업 재수행
-- 원인 분석 후 원격 push/태그 push 재실행 완료
-- master push: `a9c899b -> de01d6c`
-- tag push: `v1.8.1` 신규 등록
+3. 로그 파일 세션 고정 (`main_window.py`)
+- `_persistent_log_path` 도입
+- 앱 실행 후 첫 로그 파일 경로를 유지
+- 비정상 끊김 후 재연결 시 새 로그 파일 생성하지 않고 append 재개
 
-2. GitHub Release `v1.8.1` 생성/업로드 완료
-- Release URL: `https://github.com/leeshw-hwik/lnxterm/releases/tag/v1.8.1`
-- Asset: `lnxterm`
-- Download URL: `https://github.com/leeshw-hwik/lnxterm/releases/download/v1.8.1/lnxterm`
-- Asset Size: `59,354,056 bytes`
-- PublishedAt: `2026-02-13T15:40:38Z`
+4. 연결만 해제/재연결 시 경로 표시 유지 (`main_window.py`, `sidebar_widget.py`)
+- 연결 해제 시 `_on_log_stop(clear_display=False)` 사용
+- 로그 파일/통계 파일 경로 표시를 해제 시점에 지우지 않음
+- 명시적 로그 중지 동작에서만 표시 초기화 가능
 
-3. 릴리스 설명(Release Notes) 재작성 완료
-- 문제: 기존 본문에 줄바꿈 이스케이프(`\n`) 문자열이 그대로 표시됨
-- 조치: `gh release edit --notes-file` 방식으로 마크다운 본문 전체 교체
-- 반영 내용: `v1.8.0 -> v1.8.1` 전체 변경사항(기능/UI/테마/문서/파일 목록/비교 링크)
+5. 앱 버전 상향
+- `main_window.py` `APP_VERSION`: `v1.8.2`
+- `main.py` `ApplicationVersion`: `1.8.2`
 
-4. 코드/빌드 재확인
-- 통계 CSV 반영 코드 확인:
-- `sidebar_widget.py:703` (`_append_counter_stats`)
-- `sidebar_widget.py:719` (CSV 헤더 순서)
-- `sidebar_widget.py:760`, `sidebar_widget.py:764` (원문 로그 `line.rstrip("\\r\\n")` 저장)
+## 문서 변경
+- `doc/PROJECT_STATUS.MD`: v1.8.2 상태/완료항목/Known issues 반영
+- `doc/PROMPT.MD`: v1.8.2 요구사항(재연결 env, `.env` 우선순위, 표시 유지) 반영
+- `doc/IMPLEMENTATION_PLAN.MD`: v1.8.2 구현 범위/완료항목/잔여항목 반영
+- `doc/WALKTHROUGH.MD`: `.env`/재연결/지속성 검증 시나리오 갱신
+- `README.md`: v1.8.2 변경 요약/릴리스 링크/환경변수 설명 갱신
+- `.env.example`: 재연결 주기 환경변수 예시 추가
+- `GEMINI.MD`: `previous_context.md` 경로 기준으로 지침 문구 정정
+
+## 빌드/검증 기록
 - 문법 점검:
-- `.venv/bin/python -m py_compile main_window.py search_widget.py sidebar_widget.py styles.py terminal_widget.py`
+```bash
+.venv/bin/python -m py_compile main_window.py sidebar_widget.py serial_manager.py log_manager.py main.py
+```
 - 빌드:
-- `./build_exe.sh` 성공
-- `dist/lnxterm` 생성
-- SHA256: `8edd1988b807008455bfaa8fc3046cee1019f968f6a9fa8d6d985b23304f818e`
+```bash
+./build_exe.sh
+```
+- 산출물: `dist/lnxterm`
 
-## v1.8.0 -> v1.8.1 변경 핵심 요약
-- 문자열 통계 CSV 정합성 강화
-- 열 순서 고정: `문자열, 집계 시점, 누적 카운트, 대소문자 구분, 로그`
-- 로그 열에 매칭 원문 1줄 전체 저장
-- 사이드바 UX 개선
-- 로그/통계 경로 복사 버튼, 정렬/크기/클릭성 보정
-- 카운터 시작/정지/초기화/전체초기화 UX 개선
-- 터미널/메인 개선
-- 터미널 `max_lines` 설정 연동
-- 로그/통계 경로 동기화 로직 정리
-- 스타일 개선
-- One Dark Pro 팔레트 반영
-- 검색/버튼/상태바 가독성 개선
-- 문서 체계 정리
-- `doc/*.md -> doc/*.MD` 대문자 규칙 정렬
-- `PROMPT/IMPLEMENTATION_PLAN/PROJECT_STATUS/WALKTHROUGH` 최신화
+## 릴리스 절차 (이번 세션 수행 대상)
+1. 변경 파일 커밋
+2. `master` 푸시
+3. 태그 `v1.8.2` 생성 및 푸시
+4. GitHub Release `v1.8.2` 생성
+5. Asset `dist/lnxterm` 업로드
 
-## 다음 세션 우선 작업 제안
-1. `GEMINI.MD` 미커밋 변경사항 처리 방향 결정(유지/커밋)
-2. 필요 시 `v1.8.1` 릴리스 본문 문구 미세 수정(현재는 마크다운 정상 반영됨)
-3. 통계 CSV 샘플 파일 생성 테스트(헤더/행 순서/로그 원문 필드) 자동화
-
-## 자주 쓰는 확인 명령
-- `git log --oneline --decorate -n 5`
-- `gh release view v1.8.1 --json url,name,body,assets,publishedAt`
-- `./build_exe.sh`
+## 다음 세션 체크포인트
+1. 타겟 장비에서 `.env` 경로 출력과 실제 파일 경로 일치 확인
+2. 케이블 분리/복구 반복 시 동일 로그/통계 파일 유지 확인
+3. 배포 시스템에서 Qt 의존성(`libxcb-cursor.so.0`, `libtiff.so.5`) 설치 여부 확인

@@ -580,10 +580,10 @@ class SidebarWidget(QFrame):
 
         return QIcon(pixmap)
 
-    def set_logging_state(self, logging: bool):
+    def set_logging_state(self, logging: bool, clear_display: bool = True):
         """로깅 상태 UI 업데이트"""
         self._is_logging = logging
-        if not logging:
+        if not logging and clear_display:
             self.set_log_started_time("")
             self.set_actual_log_filename("")
 

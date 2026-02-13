@@ -1,63 +1,64 @@
 # 프로젝트 상태 보고서: LnxTerm (Project Status)
 
-> **현재 버전**: v1.8.1
-> **최종 업데이트**: 2026-02-13
+> **현재 버전**: v1.8.2
+> **최종 업데이트**: 2026-02-14
 > **타겟 시스템**: Linux (ST-Link V3 Mini 디버그 환경)
 
 ## 1) 프로젝트 개요
-AI가 다음 세션에서 바로 작업을 이어갈 수 있도록 개발 상태를 정리한 문서이다.
+ST-Link V3 Mini 기반 임베디드 장치 디버깅/로그 수집을 위한 PyQt6 시리얼 터미널 GUI.
+다음 세션에서 즉시 작업 이어받을 수 있도록 구현/릴리스 상태를 요약한다.
 
 ## 2) 기술 스택
 - Python 3.12+
-- PyQt6 GUI (`styles.py`, 다크 테마)
-- pyserial + pyserial-async 처리
-- PyInstaller 배포
-- GitHub CLI(`gh`) 릴리스 관리
+- PyQt6
+- pyserial
+- python-dotenv
+- PyInstaller
+- GitHub CLI(`gh`)
 
 ## 3) 핵심 파일
-- `main_window.py`: 전체 윈도우, 상태 전달, 통계 처리 연동
-- `sidebar_widget.py`: 연결/로그/문자열 통계 UI 및 CSV 기록 로직
-- `terminal_widget.py`: 터미널 표시, ANSI 하이라이트, 검색
-- `search_widget.py`: Ctrl+F 검색 패널
-- `styles.py`: One Dark Pro 기반 QSS
-- `serial_manager.py`: 시리얼 수신 및 점유 감지 로직
-- `log_manager.py`: 로그 파일 생성/flush/종료
+- `main_window.py`: 전체 연결/재연결/로그 시작·중지/환경변수 로드/상태바
+- `sidebar_widget.py`: 로그 경로/통계 경로 표시, 문자열 통계 카운터 및 CSV 기록
+- `serial_manager.py`: 포트 스캔, 점유 감지(Lockfile + fuser), 읽기 스레드
+- `log_manager.py`: 로그 파일 open/flush/close
+- `terminal_widget.py`: RX/TX 표시 및 라인 파싱
 
-## 4) 완료 항목
+## 4) v1.8.2 기준 완료 항목
+1. `.env` 참조 경로 개선
+- 배포 실행 파일(`dist/lnxterm`) 기준으로 `.env`를 우선 탐색
+- 탐색 순서: 실행파일 디렉토리 → 현재 작업 디렉토리 → 소스 디렉토리
+- `.env`가 없을 때 저장 경로도 실행 환경에 맞춰 결정
 
-### A. 문자열 통계 CSV 정합성 [완료]
-- 저장 열 순서 고정: `문자열, 집계 시점, 누적 카운트, 대소문자 구분, 로그`
-- 로그 열에는 대상 문자열이 매칭된 **완전한 1줄 로그 원문** 저장
-- `sidebar_widget.py` `_append_counter_stats()` 구현 반영
+2. 자동 재연결 주기 환경변수화
+- `RECONNECT_INTERVAL_MS`(우선) 또는 `RECONNECT_INTERVAL_SEC` 지원
+- 값이 없거나 잘못되면 기본 3초(3000ms)
+- 재연결 대기/실패 메시지에 실제 설정 주기 반영
 
-### B. 사이드바 UX 세부 개선 [완료]
-- 문자열 통계 복사 버튼/로그 복사 버튼의 클릭성 및 정렬 조정
-- 복사 대상 경로 표시 라인 정합성 유지
+3. 로그 파일 세션 고정
+- 프로그램 실행 후 최초 지정된 로그 파일 경로를 세션 동안 유지
+- 비정상 끊김 후 재연결 시 새 파일이 아닌 기존 파일에 append 재개
 
-### C. 문서 정합성 정리 [완료]
-- GEMINI.MD 규칙 적용으로 문서 이름을 대문자 MD로 통일:
-  - `doc/IMPLEMENTATION_PLAN.MD`
-  - `doc/PROJECT_STATUS.MD`
-  - `doc/WALKTHROUGH.MD`
-  - `doc/PROMPT.MD`
-- 각 문서 v1.8.1 변경사항 반영
+4. 문자열 통계 CSV 파일 세션 고정(로그 파일 기반)
+- 통계 CSV 경로는 로그 파일 경로에서 계산되므로 세션 동안 동일 파일 유지
+- 재연결 후에도 동일 CSV에 누적 기록
 
-### D. 빌드/릴리스 [완료]
-- `./build_exe.sh` 실행 성공
-- `dist/lnxterm` 생성 완료
+5. 연결만 끊었다 다시 연결하는 경우 UI 표시 유지
+- 앱 재시작 없이 연결 해제/재연결 시 로그 파일/통계 파일 경로 표시 유지
+- 명시적인 로그 중지 동작에서만 표시 초기화 가능
 
 ## 5) Known Issues / 주의점
-- PyInstaller 빌드 경고: `libxcb-cursor.so.0`, `libtiff.so.5` 미탐지 경고
-  - 실행 불가로 이어지지 않지만 타겟 시스템 패키지 상태에 따라 동작 영향 가능
+- PyInstaller 빌드 경고가 출력될 수 있음:
+  - `libxcb-cursor.so.0`, `libtiff.so.5`
+- 경고가 있어도 빌드 자체는 성공 가능. 타겟 시스템 라이브러리 설치 상태 점검 필요.
 
 ## 6) 다음 세션 우선순위
-1. `v1.8.1` GitHub Release 생성 후 실행 파일 업로드 여부 확인
-2. 통계 CSV 샘플 샘플링(헤더/로그 라인) 테스트 자동화
-3. 통계 초기화/재시작 시나리오에서 카운트 라벨 상태 동기화 추가 점검
-4. GUI 접근성 개선: 작은 창에서 복사 버튼/텍스트 레이아웃 미세 정렬 유지
+1. `v1.8.2` 릴리스 바이너리 실행 환경(타겟 Linux)에서 Qt 의존성 점검
+2. 자동 재연결 시나리오(케이블 분리/복구) 통합 테스트 체크리스트 자동화
+3. 문자열 통계 CSV 파일 잠금/동시성(장시간 운용) 안정성 점검
 
-## 7) 명령 요약
+## 7) 핵심 점검 명령
 ```bash
+.venv/bin/python -m py_compile main_window.py sidebar_widget.py serial_manager.py log_manager.py
 ./build_exe.sh
-python -m py_compile main_window.py sidebar_widget.py styles.py search_widget.py terminal_widget.py
+./dist/lnxterm
 ```

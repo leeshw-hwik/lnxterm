@@ -76,7 +76,10 @@ class MainWindow(QMainWindow):
     """메인 윈도우"""
 
     APP_TITLE = "LnxTerm - 시리얼 터미널"
-    APP_VERSION = "v1.8.0"
+    APP_VERSION = "v1.8.2"
+    DEFAULT_RECONNECT_INTERVAL_MS = 3000
+    ENV_RECONNECT_INTERVAL_MS = "RECONNECT_INTERVAL_MS"
+    ENV_RECONNECT_INTERVAL_SEC = "RECONNECT_INTERVAL_SEC"
 
     def __init__(self):
         super().__init__()
@@ -84,12 +87,14 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 650)
         self.resize(1280, 768)
 
-        # .env 파일 로드
-        self._env_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), ".env"
-        )
-        load_dotenv(self._env_path)
-        self._log_dir = os.environ.get("LOG_DIR", "")
+        # .env 파일 로드 (실행 파일 디렉토리 우선)
+        self._env_path = self._resolve_env_path()
+        load_dotenv(self._env_path, override=True)
+        self._log_dir = os.path.abspath(
+            os.path.expanduser(os.environ.get("LOG_DIR", "").strip())
+        ) if os.environ.get("LOG_DIR", "").strip() else ""
+        self._persistent_log_path: str = ""
+        self._reconnect_interval_ms = self._resolve_reconnect_interval_ms()
 
         # 매니저 초기화
         self._serial = SerialManager()
@@ -102,7 +107,7 @@ class MainWindow(QMainWindow):
         self._auto_reconnect = True
         self._manual_disconnect = False
         self._reconnect_timer = QTimer(self)
-        self._reconnect_timer.setInterval(3000)  # 3초
+        self._reconnect_timer.setInterval(self._reconnect_interval_ms)
         self._reconnect_timer.timeout.connect(self._try_reconnect)
 
         # 스타일 적용
@@ -126,6 +131,10 @@ class MainWindow(QMainWindow):
             self._terminal.append_system_message(f"로그 디렉토리: {self._log_dir}")
         else:
             self._terminal.append_system_message("로그 디렉토리가 설정되지 않았습니다. 연결 시 설정합니다.")
+        self._terminal.append_system_message(
+            f"자동 재연결 간격: {self._get_reconnect_delay_text()}"
+        )
+        self._terminal.append_system_message(f".env 경로: {self._env_path}")
 
         self._terminal.append_system_message("사이드바에서 포트를 선택하고 연결하세요.\n")
 
@@ -290,11 +299,11 @@ class MainWindow(QMainWindow):
 
     # === 시리얼 연결 ===
 
-    def _on_connect(self, settings: dict, silent: bool = False):
+    def _on_connect(self, settings: dict, silent: bool = False) -> bool:
         """시리얼 포트 연결. silent=True이면 다이얼로그 없이 경고만 출력."""
         # LOG_DIR 확인 - 미설정시 다이얼로그
         if not self._ensure_log_dir():
-            return
+            return False
 
         try:
             self._terminal.set_max_lines(
@@ -324,7 +333,7 @@ class MainWindow(QMainWindow):
                     )
                     if reply != QMessageBox.StandardButton.Yes:
                         self._terminal.append_system_message("연결 취소됨.\n")
-                        return
+                        return False
 
             self._serial.connect(
                 port=port,
@@ -361,15 +370,25 @@ class MainWindow(QMainWindow):
 
             # 연결 시 자동 로그 시작
             self._auto_start_logging()
+            return True
 
         except Exception as e:
             QMessageBox.critical(self, "연결 오류", f"시리얼 포트 연결에 실패했습니다:\n{str(e)}")
             self._terminal.append_system_message(f"연결 실패: {str(e)}\n")
+            return False
 
     def _ensure_log_dir(self) -> bool:
         """LOG_DIR 확인 및 설정. 성공 시 True 반환."""
-        if self._log_dir and os.path.isdir(self._log_dir):
-            return True
+        if self._log_dir:
+            normalized = os.path.abspath(os.path.expanduser(self._log_dir))
+            try:
+                os.makedirs(normalized, exist_ok=True)
+            except OSError:
+                pass
+            if os.path.isdir(normalized):
+                self._log_dir = normalized
+                os.environ["LOG_DIR"] = normalized
+                return True
 
         from PyQt6.QtWidgets import QFileDialog
         dir_path = QFileDialog.getExistingDirectory(
@@ -382,11 +401,84 @@ class MainWindow(QMainWindow):
             return False
 
         # .env 파일에 저장
-        self._log_dir = dir_path
-        os.environ["LOG_DIR"] = dir_path
-        set_key(self._env_path, "LOG_DIR", dir_path)
-        self._terminal.append_system_message(f"로그 디렉토리 설정: {dir_path}\n")
+        self._log_dir = os.path.abspath(os.path.expanduser(dir_path))
+        os.environ["LOG_DIR"] = self._log_dir
+        set_key(self._env_path, "LOG_DIR", self._log_dir)
+        self._terminal.append_system_message(f"로그 디렉토리 설정: {self._log_dir}\n")
         return True
+
+    def _resolve_env_path(self) -> str:
+        """실행 환경에 맞는 .env 경로 결정."""
+        candidate_paths: list[str] = []
+        if getattr(sys, "frozen", False):
+            candidate_paths.append(
+                os.path.join(os.path.dirname(os.path.abspath(sys.executable)), ".env")
+            )
+        candidate_paths.append(os.path.join(os.getcwd(), ".env"))
+        candidate_paths.append(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        )
+
+        unique_candidates = []
+        for path in candidate_paths:
+            normalized = os.path.abspath(path)
+            if normalized not in unique_candidates:
+                unique_candidates.append(normalized)
+
+        for path in unique_candidates:
+            if os.path.isfile(path):
+                return path
+
+        # 기존 파일이 없으면 실행 파일 폴더(배포 환경) 또는 소스 폴더(개발 환경)에 생성
+        if getattr(sys, "frozen", False):
+            return os.path.join(
+                os.path.dirname(os.path.abspath(sys.executable)), ".env"
+            )
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+    def _resolve_reconnect_interval_ms(self) -> int:
+        """환경변수에서 자동 재연결 주기를 읽어 ms 단위로 반환."""
+        raw_ms = os.environ.get(self.ENV_RECONNECT_INTERVAL_MS, "").strip()
+        parsed_ms = self._parse_positive_milliseconds(raw_ms)
+        if parsed_ms is not None:
+            return parsed_ms
+
+        raw_sec = os.environ.get(self.ENV_RECONNECT_INTERVAL_SEC, "").strip()
+        parsed_sec_ms = self._parse_positive_seconds_to_ms(raw_sec)
+        if parsed_sec_ms is not None:
+            return parsed_sec_ms
+
+        return self.DEFAULT_RECONNECT_INTERVAL_MS
+
+    @staticmethod
+    def _parse_positive_milliseconds(raw_value: str) -> int | None:
+        """양의 밀리초 문자열을 int로 변환. 실패 시 None."""
+        if not raw_value:
+            return None
+        try:
+            value = int(float(raw_value))
+        except ValueError:
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
+    def _parse_positive_seconds_to_ms(raw_value: str) -> int | None:
+        """양의 초 문자열을 ms(int)로 변환. 실패 시 None."""
+        if not raw_value:
+            return None
+        try:
+            value = float(raw_value)
+        except ValueError:
+            return None
+        if value <= 0:
+            return None
+        return int(value * 1000)
+
+    def _get_reconnect_delay_text(self) -> str:
+        """자동 재연결 주기를 화면 표시용 텍스트로 변환."""
+        if self._reconnect_interval_ms % 1000 == 0:
+            return f"{self._reconnect_interval_ms // 1000}초"
+        return f"{self._reconnect_interval_ms / 1000:g}초"
 
     def _generate_log_filename(self) -> str:
         """로그 파일명 자동 생성: lnxterm_YYYYMMDD_HHMMSS.log"""
@@ -398,8 +490,9 @@ class MainWindow(QMainWindow):
         if self._log.is_logging:
             return
         if self._log_dir:
-            log_path = self._generate_log_filename()
-            self._on_log_start(log_path)
+            if not self._persistent_log_path:
+                self._persistent_log_path = self._generate_log_filename()
+            self._on_log_start(self._persistent_log_path)
 
     def _on_disconnect(self, manual: bool = True):
         """시리얼 포트 연결 해제"""
@@ -415,8 +508,7 @@ class MainWindow(QMainWindow):
         self._terminal.append_system_message(f"연결 해제: {port_name}\n")
         self.setWindowTitle(self.APP_TITLE)
 
-        self._on_log_stop()
-        self._sidebar.set_stats_output_from_logfile("")
+        self._on_log_stop(clear_display=False)
         if manual:
             # 수동 해제: 재연결 안 함, 로그 중지
             self._manual_disconnect = True
@@ -424,7 +516,9 @@ class MainWindow(QMainWindow):
         else:
             # 비정상 끊김: 자동 재연결 시도
             if self._auto_reconnect and self._last_settings:
-                self._terminal.append_system_message("3초 후 자동 재연결 시도...\n")
+                self._terminal.append_system_message(
+                    f"{self._get_reconnect_delay_text()} 후 자동 재연결 시도...\n"
+                )
                 self._status_connection.setText("🟡 재연결 대기")
                 self._reconnect_timer.start()
 
@@ -435,11 +529,12 @@ class MainWindow(QMainWindow):
             return
 
         self._terminal.append_system_message("재연결 시도 중...\n")
-        try:
-            self._on_connect(self._last_settings, silent=True)
-        except Exception:
-            # 실패 시 다시 3초 후 재시도
-            self._terminal.append_system_message("재연결 실패, 3초 후 다시 시도...\n")
+        reconnected = self._on_connect(self._last_settings, silent=True)
+        if not reconnected:
+            # 실패 시 설정된 주기 후 재시도
+            self._terminal.append_system_message(
+                f"재연결 실패, {self._get_reconnect_delay_text()} 후 다시 시도...\n"
+            )
             self._reconnect_timer.start()
 
     def _on_data_received(self, data: bytes):
@@ -503,12 +598,16 @@ class MainWindow(QMainWindow):
         """메뉴에서 로그 시작"""
         if not self._ensure_log_dir():
             return
-        log_path = self._generate_log_filename()
+        if not self._persistent_log_path:
+            self._persistent_log_path = self._generate_log_filename()
+        log_path = self._persistent_log_path
         self._on_log_start(log_path)
 
     def _on_log_start(self, file_path: str):
         """로그 기록 시작"""
         try:
+            if not self._persistent_log_path:
+                self._persistent_log_path = file_path
             self._log.start_logging(file_path)
             self._sidebar.set_stats_output_from_logfile(file_path)
             self._sidebar.set_logging_state(True)
@@ -519,13 +618,14 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "로그 오류", f"로그 파일을 열 수 없습니다:\n{str(e)}")
 
-    def _on_log_stop(self):
+    def _on_log_stop(self, clear_display: bool = True):
         """로그 기록 중지"""
         if self._log.is_logging:
             path = self._log.file_path
             self._log.stop_logging()
-            self._sidebar.set_logging_state(False)
-            self._status_log.setText("")
+            self._sidebar.set_logging_state(False, clear_display=clear_display)
+            if clear_display:
+                self._status_log.setText("")
             self._terminal.append_system_message(f"로그 기록 종료: {path}\n")
 
     # === UI 도구 ===

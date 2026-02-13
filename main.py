@@ -23,7 +23,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("LnxTerm")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.8.2")
     app.setOrganizationName("LnxTerm")
 
     # 기본 폰트 설정
