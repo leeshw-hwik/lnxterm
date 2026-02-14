@@ -43,6 +43,7 @@ COLORS = {
     "statusbar_bg": "#21252B",
     "statusbar_text": "#ABB2BF",
     "statusbar_disconnected_bg": "#282C34",
+    "bg_secondary": "#21252B",
 }
 
 

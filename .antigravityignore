@@ -11,6 +11,7 @@ dist/
 __pycache__/
 .git/
 reqs/
+working/
 
 # Python 산출물/캐시
 *.pyc

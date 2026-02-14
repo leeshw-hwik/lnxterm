@@ -35,9 +35,17 @@ class TerminalWidget(QPlainTextEdit):
         # 미완성 라인 버퍼 (수신 데이터가 줄 단위로 오지 않을 수 있음)
         self._line_buffer = ""
 
-        # 스크롤바 위치 변경 감지
+    # 스크롤바 위치 변경 감지
         self.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
         self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
+
+    return_pressed = pyqtSignal()
+
+    def keyPressEvent(self, event):
+        """키 입력 처리"""
+        if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
+            self.return_pressed.emit()
+        super().keyPressEvent(event)
 
     def _normalize_max_lines(self, max_lines: int | None, fallback: int) -> int:
         """최대 라인 수 유효성 검사"""

@@ -1,7 +1,7 @@
 # LnxTerm (Serial Terminal for Linux)
 
 ST-Link V3 Mini 기반 임베디드 장치 디버깅/로그 수집을 위한 시리얼 터미널 GUI입니다.
-현재 배포 기준 버전은 **v1.8.2** 입니다.
+- 현재 배포 기준 버전은 **v1.8.3** 입니다.
 
 ## 핵심 기능
 
@@ -18,13 +18,13 @@ ST-Link V3 Mini 기반 임베디드 장치 디버깅/로그 수집을 위한 시
 - 터미널 검색 (`Ctrl+F`), 하이라이트, 이전/다음 이동
 - One Dark Pro 기반 UI 테마
 
-## v1.8.2 변경 요약
+## v1.8.3 변경 요약
 
-- 실행 환경별 `.env` 참조 경로 개선 (실행 파일 디렉토리 우선)
-- 자동 재연결 주기 환경변수화 (`RECONNECT_INTERVAL_MS`, `RECONNECT_INTERVAL_SEC`)
-- 로그 파일 세션 고정: 재연결 후 동일 로그 파일 append
-- 문자열 통계 CSV 세션 고정: 로그 파일 기반 동일 CSV 유지
-- 앱 재시작 없이 연결만 재수립할 때 로그/통계 파일 표시 유지
+- UI 개선:
+  - ON/OFF 상태 표시 라벨의 테두리 제거 (텍스트만 표시)
+  - 문자열 통계 `Start/Stop` 버튼과 `초기화` 버튼의 높이/정렬 통일 (24px)
+  - `전체 초기화` 버튼 높이 축소 (20px) 및 잘림 현상 수정
+  - 아이콘 가시성 개선
 
 ## 빠른 실행 (릴리스 바이너리)
 
@@ -86,8 +86,8 @@ RECONNECT_INTERVAL_MS=3000
 
 ## 릴리스 링크
 
-- v1.8.2: https://github.com/leeshw-hwik/lnxterm/releases/tag/v1.8.2
-- v1.8.2 바이너리: https://github.com/leeshw-hwik/lnxterm/releases/download/v1.8.2/lnxterm
+- v1.8.3: https://github.com/leeshw-hwik/lnxterm/releases/tag/v1.8.3
+- v1.8.3 바이너리: https://github.com/leeshw-hwik/lnxterm/releases/download/v1.8.3/lnxterm
 
 ## 라이선스
 

@@ -1,0 +1,8 @@
+[2026-02-14 17:58:00]
+Build Status: SUCCESS
+Executable: dist/lnxterm
+Changes:
+- sidebar_widget.py:
+  - Removed border from status_label (ON/OFF indicator).
+  - Adjusted Start/Stop button and Reset button specific styles for alignment (fixed size 24x24, padding 0).
+  - Reduced 'Reset All' button height to 20px and overrode min-height style to prevent clipping.

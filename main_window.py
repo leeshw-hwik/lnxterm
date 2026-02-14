@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
     """메인 윈도우"""
 
     APP_TITLE = "LnxTerm - 시리얼 터미널"
-    APP_VERSION = "v1.8.2"
+    APP_VERSION = "v1.8.3"
     DEFAULT_RECONNECT_INTERVAL_MS = 3000
     ENV_RECONNECT_INTERVAL_MS = "RECONNECT_INTERVAL_MS"
     ENV_RECONNECT_INTERVAL_SEC = "RECONNECT_INTERVAL_SEC"
@@ -282,8 +282,9 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self):
         """키보드 단축키 설정"""
-        # Ctrl+F: 검색
-        QShortcut(QKeySequence("Ctrl+F"), self, self._toggle_search)
+        # Ctrl+F: 검색 (메뉴 액션과 중복되므로 제거)
+        # QShortcut(QKeySequence("Ctrl+F"), self, self._toggle_search)
+        
         # F3: 다음 검색
         QShortcut(QKeySequence("F3"), self, lambda: self._search.find_next())
         # Shift+F3: 이전 검색
@@ -296,6 +297,10 @@ class MainWindow(QMainWindow):
         self._sidebar.disconnect_requested.connect(lambda: self._on_disconnect(manual=True))
         self._sidebar.log_stop_requested.connect(self._on_log_stop)
         self._sidebar.clear_requested.connect(self._clear_terminal)
+        self._sidebar.send_command_requested.connect(self.send_serial_command)
+
+        # 터미널 엔터 시 커맨드 입력창으로 포커스
+        self._terminal.return_pressed.connect(self._command_input.setFocus)
 
     # === 시리얼 연결 ===
 
@@ -553,6 +558,7 @@ class MainWindow(QMainWindow):
         # 로그 파일에 기록
         for timestamp, line in completed_lines:
             self._sidebar.process_log_line_for_counters(line, timestamp)
+            self._sidebar.process_log_line_for_automation(line)
             self._log.write_line(line, timestamp)
 
     def _on_serial_error(self, error_msg: str):
@@ -561,37 +567,77 @@ class MainWindow(QMainWindow):
         self._on_disconnect(manual=False)
 
     def _send_command(self):
-        """명령 전송"""
+        """GUI 입력창의 명령 전송"""
         command = self._command_input.text()
+        
+        # 빈 명령이라도 일단 전송 시도(엔터 역할)
+        self.send_serial_command(command)
+
+        # 히스토리 추가 및 입력 클리어
+        if command:
+            self._command_input.add_to_history(command)
+        self._command_input.clear()
+        self._command_input.setFocus()
+
+    def send_serial_command(self, content: str, interval_ms: int = 0):
+        """
+        시리얼 명령 전송 (단일/멀티라인 지원, 간격 지원).
+        content에 포함된 각 라인을 순차적으로 전송.
+        interval_ms > 0 이면 각 라인 전송 사이 지연.
+        """
+        if not content:
+            lines = [""]
+        else:
+            lines = content.splitlines()
+        
+        if not lines:
+            lines = [""]
 
         if not self._serial.is_connected():
             self._terminal.append_system_message("포트가 연결되지 않았습니다.\n")
             return
 
-        try:
-            # 명령 + LF 전송
-            data = (command + "\n").encode("utf-8")
-            sent = self._serial.write(data)
-            self._tx_bytes += sent
+        if interval_ms <= 0:
+            try:
+                for line in lines:
+                    self._send_line_logic(line)
+                self._update_byte_counts()
+            except Exception as e:
+                self._terminal.append_system_message(f"전송 오류: {str(e)}\n")
+        else:
+            self._send_lines_delayed(lines, interval_ms)
+
+    def _send_line_logic(self, line: str):
+        """단일 라인 전송 로직 (로그/터미널 처리 포함)"""
+        data = (line + "\n").encode("utf-8")
+        sent = self._serial.write(data)
+        self._tx_bytes += sent
+        
+        completed_lines = self._terminal.append_data(line + "\n", direction="tx")
+        
+        for timestamp, log_line in completed_lines:
+            tx_line = f"[TX] {log_line}"
+            self._log.write_line(tx_line, timestamp)
+
+    def _send_lines_delayed(self, lines: list, interval_ms: int):
+        """지연 시간을 두고 순차 전송"""
+        if not lines:
             self._update_byte_counts()
-
-            # 터미널에 표시 (빈 명령어도 표시)
-            completed_lines = self._terminal.append_data(command + "\n", direction="tx")
-
-            # 로그에 기록
-            for timestamp, line in completed_lines:
-                tx_line = f"[TX] {line}"
-                self._log.write_line(tx_line, timestamp)
-
-            # 히스토리에 추가 (빈 명령은 히스토리에 넣지 않음) 및 입력 클리어
-            if command:
-                self._command_input.add_to_history(command)
-            self._command_input.clear()
-            self._command_input.setFocus()
-
+            return
+        
+        try:
+            line = lines[0]
+            self._send_line_logic(line)
+            
+            remaining = lines[1:]
+            if remaining:
+                QTimer.singleShot(interval_ms, lambda: self._send_lines_delayed(remaining, interval_ms))
+            else:
+                self._update_byte_counts()
         except Exception as e:
-            self._terminal.append_system_message(f"전송 오류: {str(e)}\n")
+            self._terminal.append_system_message(f"전송 오류 (지연 전송): {str(e)}\n")
 
+    # === 로그 관리 ===
     # === 로그 관리 ===
 
     def _on_log_start_menu(self):
