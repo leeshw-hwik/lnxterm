@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
     """메인 윈도우"""
 
     APP_TITLE = "LnxTerm - 시리얼 터미널"
-    APP_VERSION = "v1.8.3"
+    APP_VERSION = "v1.8.4"
     DEFAULT_RECONNECT_INTERVAL_MS = 3000
     ENV_RECONNECT_INTERVAL_MS = "RECONNECT_INTERVAL_MS"
     ENV_RECONNECT_INTERVAL_SEC = "RECONNECT_INTERVAL_SEC"
@@ -122,6 +122,9 @@ class MainWindow(QMainWindow):
         # 시그널 연결
         self._connect_signals()
 
+        # 환경 변수 사전 설정 로드
+        self._sidebar.load_configs_from_env()
+
         # 초기 상태
         self._update_statusbar_style(False)
         self._terminal.append_system_message("LnxTerm 시리얼 터미널이 시작되었습니다.")
@@ -154,6 +157,13 @@ class MainWindow(QMainWindow):
         log_stop_action = QAction("로그 중지", self)
         log_stop_action.triggered.connect(self._on_log_stop)
         file_menu.addAction(log_stop_action)
+
+        file_menu.addSeparator()
+
+        update_env_action = QAction("환경 변수 업데이트", self)
+        update_env_action.setShortcut("Ctrl+S")
+        update_env_action.triggered.connect(self._on_update_env_configs)
+        file_menu.addAction(update_env_action)
 
         file_menu.addSeparator()
 
@@ -731,6 +741,19 @@ class MainWindow(QMainWindow):
             "</ul>"
         )
 
+    def _on_update_env_configs(self):
+        """환경 변수 업데이트 실행"""
+        success = self._sidebar.save_configs_to_env(self._env_path)
+        if success:
+             self._terminal.append_system_message("환경 변수(.env)가 업데이트되었습니다.\n")
+             QMessageBox.information(self, "완료", "환경 변수(.env)가 성공적으로 업데이트되었습니다.")
+        else:
+             mode = os.environ.get("AUTO_LOAD_MODE", "CONFIRM")
+             if mode == "IGNORE":
+                  QMessageBox.warning(self, "업데이트 불가", f"AUTO_LOAD_MODE가 '{mode}'로 설정되어 있어 환경 변수를 업데이트할 수 없습니다.")
+             else:
+                  QMessageBox.warning(self, "실패", "환경 변수 업데이트에 실패했습니다. (알 수 없는 오류)")
+
     def closeEvent(self, event):
         """창 닫기 이벤트"""
         # 연결 해제
@@ -739,4 +762,9 @@ class MainWindow(QMainWindow):
         # 로그 종료
         if self._log.is_logging:
             self._log.stop_logging()
+        
+        # 현재 설정 저장
+        # 모드가 IGNORE면 내부에서 False 반환하며 저장 안 함.
+        self._sidebar.save_configs_to_env(self._env_path)
+            
         event.accept()

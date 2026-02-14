@@ -1,40 +1,41 @@
 # LnxTerm 개발 워크스루
 
 ## 현재 릴리스
-- 버전: **v1.8.3**
+- 버전: **v1.8.4**
 - 바이너리: `dist/lnxterm`
 
 ## 이번 릴리스 핵심 변경
-1. UI 개선: 아이콘 가시성, 버튼 정렬 등 시각적 요소 수정
-2. ON/OFF 라벨 테두리 제거로 버튼과 구분
-3. 통계 '초기화' 버튼과 'Start/Stop' 버튼의 크기/위치 통일
-4. '전체 초기화' 버튼 잘림 현상 수정
+1. 환경 변수 기반 데이터 로딩: 시작 시 `.env`에서 통계 키워드 및 자동 명령 자동 로드
+2. 로딩 모드 지원: ALWAYS, IGNORE, CONFIRM (사용자 선택 가능)
+3. 자동 명령 JSON 파싱: 복잡한 자동화 설정을 한 줄의 JSON으로 사전 정의 가능
 
 ## 점검 시나리오
 
-### 1) `.env` 참조 확인
-1. `dist/lnxterm` 옆에 `.env` 배치
-2. `LOG_DIR`, `RECONNECT_INTERVAL_MS` 설정
-3. 프로그램 시작 후 시스템 메시지의 `.env 경로` 확인
+### 1) 자동 로딩 확인 (CONFIRM 모드)
+1. `.env`에 `AUTO_LOAD_STRING_STATS=TEST1;TEST2` 추가
+2. 프로그램 실행 시 "환경 변수에 사전 설정된 데이터가 있습니다... 불러오시겠습니까?" 팝업 확인
+3. 'Yes' 선택 시 사이드바 문자열 통계 칸에 TEST1, TEST2가 채워지는지 확인
 
-### 2) 재연결 주기 확인
-1. 연결 후 장치 케이블 분리
-2. 상태 메시지에서 설정한 주기(예: 2초/5초)로 재시도되는지 확인
-3. 케이블 복구 후 자동 연결 복귀 확인
+### 2) 자동 로딩 확인 (ALWAYS 모드)
+1. `.env`에 `AUTO_LOAD_MODE=ALWAYS` 설정
+2. 재시작 시 팝업 없이 데이터가 즉시 로드되는지 확인
 
-### 3) 로그/통계 파일 지속성 확인
-1. 최초 연결 후 생성된 로그 파일/통계 파일 경로 확인
-2. 연결만 수동 해제 후 다시 연결
-3. 동일 경로 표시 유지 여부 확인
-4. 새 로그 파일이 아닌 기존 파일에 append되는지 파일 타임라인 확인
+### 3) 자동 명령 로딩 확인
+1. `.env`에 `AUTO_LOAD_AUTO_COMMANDS=[{"name":"TestTask","trigger":"OK","post_cmd":"AT","enabled":true}]` 추가
+2. 실행 후 사이드바 '자동 명령 정보' 목록에 'TestTask'가 나타나는지 확인
+
+### 4) 자동 저장 및 IGNORE 모드 확인
+1. `CONFIRM` 모드로 실행 후 문자열 통계에 'SAVE_TEST' 입력
+2. 프로그램 종료 후 `.env` 파일 확인 -> `AUTO_LOAD_STRING_STATS`에 'SAVE_TEST'가 포함되어야 함
+3. `.env`에서 `AUTO_LOAD_MODE=IGNORE`로 변경 후 실행
+4. 문자열 통계 변경 후 종료 -> `.env` 파일이 변경되지 않아야 함 (업데이트 방지)
 
 ## 실행/검증 명령
 ```bash
-.venv/bin/python -m py_compile main_window.py sidebar_widget.py serial_manager.py log_manager.py
 ./build_exe.sh
 ./dist/lnxterm
 ```
 
 ## 참고
-- PyInstaller 경고(`libxcb-cursor.so.0`, `libtiff.so.5`)가 있어도 빌드는 성공할 수 있음.
-- 타겟 시스템 라이브러리 설치 여부는 별도 점검 필요.
+- `.env.example` 파일을 참조하여 환경 변수를 구성하십시오.
+- JSON 파싱 오류 시 터미널(콘솔)에 오류 메시지가 출력됩니다.

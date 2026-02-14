@@ -3,6 +3,7 @@
 """
 
 import csv
+import json
 import serial.tools.list_ports
 import os
 from datetime import datetime
@@ -523,6 +524,73 @@ class SidebarWidget(QFrame):
         # 초기 포트 스캔
         self.refresh_ports()
 
+    def load_configs_from_env(self):
+        """환경 변수(.env)에서 문자열 통계 및 자동 명령 설정을 읽어와 적용"""
+        mode = os.environ.get("AUTO_LOAD_MODE", "CONFIRM").upper()
+        if mode == "IGNORE":
+            return
+
+        # 1. 환경 변수 읽기
+        raw_stats = os.environ.get("AUTO_LOAD_STRING_STATS", "").strip()
+        raw_autos = os.environ.get("AUTO_LOAD_AUTO_COMMANDS", "").strip()
+
+        stats_list = [s.strip() for s in raw_stats.split(";") if s.strip()] if raw_stats else []
+        autos_list = []
+        if raw_autos:
+            try:
+                autos_list = json.loads(raw_autos)
+                if not isinstance(autos_list, list):
+                    autos_list = []
+            except json.JSONDecodeError:
+                print(f"Error parsing AUTO_LOAD_AUTO_COMMANDS: {raw_autos}")
+
+        if not stats_list and not autos_list:
+            return
+
+        # 2. 사용자 확인 (CONFIRM 모드)
+        if mode == "CONFIRM":
+            msg = "환경 변수(.env)에 사전 설정된 데이터가 있습니다. 불러오시겠습니까?\n\n"
+            if stats_list:
+                msg += f"• 문자열 통계: {len(stats_list)}개\n"
+            if autos_list:
+                msg += f"• 자동 명령: {len(autos_list)}개\n"
+
+            reply = QMessageBox.question(
+                self, "설정 불러오기", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        # 3. 데이터 적용
+        # 문자열 통계 적용
+        for i, keyword in enumerate(stats_list):
+            if i < self.MAX_LOG_COUNTERS:
+                self._log_counters[i]["input"].setText(keyword)
+                # 입력 시 _on_log_keyword_changed가 호출되어 내부 상태 업데이트됨
+
+        # 자동 명령 적용
+        for task_data in autos_list:
+            if len(self._automation_tasks) >= self.MAX_AUTO_TASKS:
+                break
+            
+            # 필수 필드 보정 및 기본값 채우기
+            task = {
+                "name": task_data.get("name", "AutoTask"),
+                "pre_cmd": task_data.get("pre_cmd", ""),
+                "trigger": task_data.get("trigger", ""),
+                "post_cmd": task_data.get("post_cmd", ""),
+                "delay": task_data.get("delay", 0),
+                "cmd_interval": task_data.get("cmd_interval", 0),
+                "enabled": task_data.get("enabled", False),
+                "trigger_count": 0
+            }
+            self._automation_tasks.append(task)
+        
+        if autos_list:
+            self._refresh_automation_list()
+
     # (Existing Methods: refresh_ports, _on_connect_clicked, ...)
 
     def _make_robot_icon(self, size: int=16) -> QIcon:
@@ -535,6 +603,63 @@ class SidebarWidget(QFrame):
         painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "🤖")
         painter.end()
         return QIcon(pixmap)
+
+    # === 환경 변수 저장 (앱 종료 시 호출) ===
+    
+    def save_configs_to_env(self, env_path: str):
+        """현재 문자열 통계 및 자동 명령 설정을 .env 파일에 저장"""
+        mode = os.environ.get("AUTO_LOAD_MODE", "CONFIRM").upper()
+
+        # 1. 문자열 통계 수집
+        stats_list = []
+        for i, item in enumerate(self._log_counters):
+            text = item["input"].text().strip()
+            if text:
+                stats_list.append(text)
+        
+        # 2. 자동 명령 수집
+        # 불필요한 필드 (trigger_count 등) 제거하여 저장
+        autos_list = []
+        for task in self._automation_tasks:
+            saved_task = {
+                "name": task.get("name", ""),
+                "pre_cmd": task.get("pre_cmd", ""),
+                "trigger": task.get("trigger", ""),
+                "post_cmd": task.get("post_cmd", ""),
+                "delay": task.get("delay", 0),
+                "cmd_interval": task.get("cmd_interval", 0),
+                "enabled": task.get("enabled", False)
+            }
+            autos_list.append(saved_task)
+        
+        # 3. .env 파일 업데이트 (main_window에서 import set_key 했으므로 여기서도 사용 가능? No, import needed within this file or pass dependency)
+        # However, SidebarWidget doesn't import set_key. Let's add import or do it in MainWindow. 
+        # But this method is in Sidebar. Let's return the data and let MainWindow save it, Or import set_key here.
+        # Ideally Sidebar shouldn't know about .env path. But current design passes logic to Sidebar load_configs_from_env.
+        # Let's stick to Sidebar having logic.
+        
+        from dotenv import set_key
+        
+        # IGNORE 모드 처리
+        if mode == "IGNORE":
+            # 요구사항 변경: IGNORE 모드인 경우 프로그램 종료 시 .env 업데이트 안 함.
+            # 메뉴에서 강제 저장 호출 시에도 안 함 (또는 에러 메시지?)
+            # 함수 인자로 force 여부를 받거나, 리턴값으로 처리.
+            return False
+
+        # 문자열 통계 저장
+        stats_str = ";".join(stats_list)
+        set_key(env_path, "AUTO_LOAD_STRING_STATS", stats_str)
+        
+        # 자동 명령 저장
+        if autos_list:
+            import json
+            autos_str = json.dumps(autos_list, ensure_ascii=False)
+            set_key(env_path, "AUTO_LOAD_AUTO_COMMANDS", autos_str)
+        else:
+            set_key(env_path, "AUTO_LOAD_AUTO_COMMANDS", "")
+            
+        return True
 
     # === 자동 명령 수행 관리 ===
 

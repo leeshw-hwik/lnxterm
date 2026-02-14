@@ -1,4 +1,7 @@
 # Session Handoff: v1.8.3 UI & Automation Refinement
+- **최우선 숙지**: 이 파일은 세션 시작 직후 **단 1회만 정독(Read)** 한다.
+- **상태 기억**: 규칙 숙지 완료 시 내부 메모리에 `[Rules_Applied: True]` 플래그를 설정하라.
+- **토큰 최적화**: 위 플래그가 확인되면 동일 세션 내에서 이 파일을 반복해서 읽지 않음으로써 추론 에너지를 코드 작성에 집중한다.
 
 ## 1. 이번 세션 시도 및 성공 (Successes)
 ### UI/UX 개선 (`sidebar_widget.py`)
