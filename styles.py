@@ -44,6 +44,15 @@ COLORS = {
     "statusbar_text": "#ABB2BF",
     "statusbar_disconnected_bg": "#282C34",
     "bg_secondary": "#21252B",
+
+    # VS Code Dark 계열 메뉴 색상
+    "menubar_bg": "#3C3C3C",
+    "menu_bg": "#252526",
+    "menu_border": "#454545",
+    "menu_text": "#D4D4D4",
+    "menu_text_active": "#FFFFFF",
+    "menu_item_hover": "#094771",
+    "menu_item_pressed": "#005A9E",
 }
 
 
@@ -66,39 +75,58 @@ def get_main_stylesheet():
 
     /* === 메뉴바 === */
     QMenuBar {{
-        background-color: {c['bg_sidebar']};
-        color: {c['text_primary']};
-        border-bottom: 1px solid {c['border']};
+        background-color: {c['menubar_bg']};
+        color: {c['menu_text']};
+        border-bottom: 1px solid {c['menu_border']};
         padding: 2px 0px;
     }}
 
     QMenuBar::item {{
+        color: {c['menu_text']};
+        background-color: transparent;
         padding: 4px 10px;
         border-radius: 3px;
     }}
 
     QMenuBar::item:selected {{
-        background-color: {c['bg_hover']};
+        background-color: {c['bg_active']};
+        color: {c['menu_text_active']};
+    }}
+
+    QMenuBar::item:pressed {{
+        background-color: {c['menu_item_pressed']};
+        color: {c['menu_text_active']};
     }}
 
     QMenu {{
-        background-color: {c['bg_sidebar']};
-        color: {c['text_primary']};
-        border: 1px solid {c['border']};
+        background-color: {c['menu_bg']};
+        color: {c['menu_text']};
+        border: 1px solid {c['menu_border']};
         padding: 4px 0px;
     }}
 
     QMenu::item {{
+        color: {c['menu_text']};
+        background-color: transparent;
         padding: 6px 30px 6px 20px;
     }}
 
     QMenu::item:selected {{
-        background-color: {c['accent']};
+        background-color: {c['menu_item_hover']};
+        color: {c['menu_text_active']};
+    }}
+
+    QMenu::item:disabled {{
+        color: {c['text_disabled']};
+    }}
+
+    QMenu::item:checked {{
+        color: {c['menu_text_active']};
     }}
 
     QMenu::separator {{
         height: 1px;
-        background-color: {c['border']};
+        background-color: {c['menu_border']};
         margin: 4px 10px;
     }}
 

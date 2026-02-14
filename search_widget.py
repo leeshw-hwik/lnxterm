@@ -9,6 +9,7 @@ from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from styles import COLORS, get_search_widget_stylesheet
+from i18n import normalize_language, tr
 
 
 class SearchWidget(QFrame):
@@ -16,11 +17,12 @@ class SearchWidget(QFrame):
 
     closed = pyqtSignal()
 
-    def __init__(self, terminal_widget, parent=None):
+    def __init__(self, terminal_widget, parent=None, language: str = "ko"):
         super().__init__(parent)
         self._terminal = terminal_widget
         self._matches = []
         self._current_match_index = -1
+        self._language = normalize_language(language)
 
         self.setObjectName("searchFrame")
         self.setStyleSheet(get_search_widget_stylesheet())
@@ -37,7 +39,7 @@ class SearchWidget(QFrame):
         # 검색 입력
         self._input = QLineEdit()
         self._input.setObjectName("searchInput")
-        self._input.setPlaceholderText("검색...")
+        self._input.setPlaceholderText(tr(self._language, "search.placeholder"))
         self._input.setMinimumWidth(200)
         self._input.setMaximumWidth(300)
         self._input.textChanged.connect(self._on_search_changed)
@@ -53,14 +55,14 @@ class SearchWidget(QFrame):
         # 이전 버튼
         self._prev_btn = QPushButton("▲")
         self._prev_btn.setObjectName("searchNavBtn")
-        self._prev_btn.setToolTip("이전 결과 (Shift+F3)")
+        self._prev_btn.setToolTip(tr(self._language, "search.tooltip.prev"))
         self._prev_btn.clicked.connect(self.find_prev)
         layout.addWidget(self._prev_btn)
 
         # 다음 버튼
         self._next_btn = QPushButton("▼")
         self._next_btn.setObjectName("searchNavBtn")
-        self._next_btn.setToolTip("다음 결과 (F3)")
+        self._next_btn.setToolTip(tr(self._language, "search.tooltip.next"))
         self._next_btn.clicked.connect(self.find_next)
         layout.addWidget(self._next_btn)
 
@@ -69,9 +71,20 @@ class SearchWidget(QFrame):
         # 닫기 버튼
         self._close_btn = QPushButton("✕")
         self._close_btn.setObjectName("searchCloseBtn")
-        self._close_btn.setToolTip("닫기 (Esc)")
+        self._close_btn.setToolTip(tr(self._language, "search.tooltip.close"))
         self._close_btn.clicked.connect(self.hide_search)
         layout.addWidget(self._close_btn)
+
+    def set_language(self, language: str):
+        self._language = normalize_language(language)
+        self._input.setPlaceholderText(tr(self._language, "search.placeholder"))
+        self._prev_btn.setToolTip(tr(self._language, "search.tooltip.prev"))
+        self._next_btn.setToolTip(tr(self._language, "search.tooltip.next"))
+        self._close_btn.setToolTip(tr(self._language, "search.tooltip.close"))
+        if self._matches:
+            self._update_match_label()
+        elif self._input.text():
+            self._match_label.setText(tr(self._language, "search.no_results"))
 
     def show_search(self):
         """검색 바 표시"""
@@ -103,7 +116,7 @@ class SearchWidget(QFrame):
             self._go_to_match(0)
             self._update_match_label()
         else:
-            self._match_label.setText("결과 없음")
+            self._match_label.setText(tr(self._language, "search.no_results"))
 
     def _find_all(self, text: str):
         """모든 매치 찾기"""
@@ -161,7 +174,7 @@ class SearchWidget(QFrame):
                 f"{self._current_match_index + 1}/{len(self._matches)}"
             )
         else:
-            self._match_label.setText("결과 없음")
+            self._match_label.setText(tr(self._language, "search.no_results"))
 
     def find_next(self):
         """다음 매치로 이동"""

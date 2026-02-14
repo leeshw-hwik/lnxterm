@@ -6,11 +6,13 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
 from styles import COLORS
+from i18n import normalize_language, tr
 
 class AutomationDialog(QDialog):
-    def __init__(self, parent=None, task_data=None):
+    def __init__(self, parent=None, task_data=None, language: str = "ko"):
         super().__init__(parent)
-        self.setWindowTitle("자동 명령 설정")
+        self._language = normalize_language(language)
+        self.setWindowTitle(tr(self._language, "automation.title"))
         self.resize(600, 700) 
         self.setMinimumWidth(500)
         self.setMinimumHeight(600)
@@ -51,6 +53,7 @@ class AutomationDialog(QDialog):
         self._task_data = task_data or {}
         self._setup_ui()
         self._load_data()
+        self._apply_language()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -58,59 +61,57 @@ class AutomationDialog(QDialog):
         layout.setContentsMargins(15, 15, 15, 15)
         
         # 1. Automatic Command Basic Info
-        basic_group = QGroupBox("자동 명령 기본 정보")
-        basic_layout = QFormLayout(basic_group)
+        self._basic_group = QGroupBox()
+        basic_layout = QFormLayout(self._basic_group)
         basic_layout.setContentsMargins(10, 5, 10, 10) 
         basic_layout.setSpacing(8)
         
         self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("예: 네트워크 연결")
-        basic_layout.addRow("명령 이름:", self._name_input)
+        self._name_label = QLabel()
+        basic_layout.addRow(self._name_label, self._name_input)
         
         self._interval_input = QSpinBox()
         self._interval_input.setRange(0, 10000)
         self._interval_input.setSuffix(" ms")
         self._interval_input.setValue(100)
-        self._interval_input.setToolTip("여러 줄의 명령어를 수행할 때, 각 줄 사이의 지연 시간")
-        basic_layout.addRow("명령어 간격:", self._interval_input)
+        self._interval_label = QLabel()
+        basic_layout.addRow(self._interval_label, self._interval_input)
         
-        layout.addWidget(basic_group)
+        layout.addWidget(self._basic_group)
         
         # 2. Pre-command
-        pre_group = QGroupBox("사전 명령 (시작 시 수행)")
-        pre_layout = QVBoxLayout(pre_group)
+        self._pre_group = QGroupBox()
+        pre_layout = QVBoxLayout(self._pre_group)
         pre_layout.setContentsMargins(10, 5, 10, 10)
         
         self._pre_cmd_input = QTextEdit()
-        self._pre_cmd_input.setPlaceholderText("명령어 입력 (여러 줄 가능)")
         self._pre_cmd_input.setMinimumHeight(60)
         self._pre_cmd_input.setAcceptRichText(False)
         self._pre_cmd_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         pre_layout.addWidget(self._pre_cmd_input)
         
-        layout.addWidget(pre_group, 1)
+        layout.addWidget(self._pre_group, 1)
         
         # 3. Trigger Log String (Delay Moved Out)
-        trigger_group = QGroupBox("트리거 로그 문자열")
-        trigger_layout = QVBoxLayout(trigger_group)
+        self._trigger_group = QGroupBox()
+        trigger_layout = QVBoxLayout(self._trigger_group)
         trigger_layout.setContentsMargins(10, 5, 10, 10)
         
         self._trigger_input = QLineEdit()
-        self._trigger_input.setPlaceholderText("감지할 로그 입력")
         trigger_layout.addWidget(self._trigger_input)
         
-        layout.addWidget(trigger_group)
+        layout.addWidget(self._trigger_group)
         
         # 4. Post-command (Delay Moved In)
-        post_group = QGroupBox("사후 명령 (트리거+지연 후 수행)")
-        post_layout = QVBoxLayout(post_group)
+        self._post_group = QGroupBox()
+        post_layout = QVBoxLayout(self._post_group)
         post_layout.setContentsMargins(10, 5, 10, 10)
         post_layout.setSpacing(10)
         
         # Delay Input (Moved Here)
         delay_row = QHBoxLayout()
-        delay_label = QLabel("감지 후 지연:")
-        delay_row.addWidget(delay_label)
+        self._delay_label = QLabel()
+        delay_row.addWidget(self._delay_label)
         
         self._delay_input = QSpinBox()
         self._delay_input.setRange(0, 3600000) # 1 hour
@@ -122,20 +123,19 @@ class AutomationDialog(QDialog):
         post_layout.addLayout(delay_row)
         
         self._post_cmd_input = QTextEdit()
-        self._post_cmd_input.setPlaceholderText("명령어 입력 (여러 줄 가능)")
         self._post_cmd_input.setMinimumHeight(60)
         self._post_cmd_input.setAcceptRichText(False)
         self._post_cmd_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         post_layout.addWidget(self._post_cmd_input)
         
-        layout.addWidget(post_group, 2)
+        layout.addWidget(self._post_group, 2)
         
         # 5. Buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
         # Cancel Button
-        self._cancel_btn = QPushButton(" Cancel")
+        self._cancel_btn = QPushButton()
         self._cancel_btn.setIcon(self._make_icon("x", COLORS['error']))
         self._cancel_btn.setFixedSize(100, 36)
         self._cancel_btn.clicked.connect(self.reject)
@@ -156,7 +156,7 @@ class AutomationDialog(QDialog):
         btn_layout.addWidget(self._cancel_btn)
         
         # OK Button
-        self._ok_btn = QPushButton(" OK")
+        self._ok_btn = QPushButton()
         self._ok_btn.setIcon(self._make_icon("check", COLORS['success']))
         self._ok_btn.setFixedSize(100, 36)
         self._ok_btn.clicked.connect(self.accept)
@@ -177,6 +177,27 @@ class AutomationDialog(QDialog):
         btn_layout.addWidget(self._ok_btn)
         
         layout.addLayout(btn_layout)
+
+    def set_language(self, language: str):
+        self._language = normalize_language(language)
+        self._apply_language()
+
+    def _apply_language(self):
+        self.setWindowTitle(tr(self._language, "automation.title"))
+        self._basic_group.setTitle(tr(self._language, "automation.group.basic"))
+        self._pre_group.setTitle(tr(self._language, "automation.group.pre"))
+        self._trigger_group.setTitle(tr(self._language, "automation.group.trigger"))
+        self._post_group.setTitle(tr(self._language, "automation.group.post"))
+        self._name_label.setText(tr(self._language, "automation.label.name"))
+        self._interval_label.setText(tr(self._language, "automation.label.interval"))
+        self._delay_label.setText(tr(self._language, "automation.label.delay"))
+        self._name_input.setPlaceholderText(tr(self._language, "automation.placeholder.name"))
+        self._pre_cmd_input.setPlaceholderText(tr(self._language, "automation.placeholder.commands"))
+        self._post_cmd_input.setPlaceholderText(tr(self._language, "automation.placeholder.commands"))
+        self._trigger_input.setPlaceholderText(tr(self._language, "automation.placeholder.trigger"))
+        self._interval_input.setToolTip(tr(self._language, "automation.tooltip.interval"))
+        self._cancel_btn.setText(f" {tr(self._language, 'automation.button.cancel')}")
+        self._ok_btn.setText(f" {tr(self._language, 'automation.button.ok')}")
 
     def _make_icon(self, shape: str, color_hex: str) -> QIcon:
         pixmap = QPixmap(16, 16)
@@ -217,7 +238,7 @@ class AutomationDialog(QDialog):
 
     def get_data(self):
         return {
-            "name": self._name_input.text().strip() or "이름 없음",
+            "name": self._name_input.text().strip() or tr(self._language, "automation.default_name"),
             "cmd_interval": self._interval_input.value(),
             "pre_cmd": self._pre_cmd_input.toPlainText(),
             "trigger": self._trigger_input.text(),

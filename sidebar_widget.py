@@ -20,6 +20,7 @@ from PyQt6.QtGui import QIntValidator, QPainter, QPixmap, QIcon, QColor, QFont, 
 from serial_manager import SerialManager
 from styles import COLORS
 from automation_dialog import AutomationDialog
+from i18n import normalize_language, tr
 
 
 class SidebarWidget(QFrame):
@@ -35,17 +36,19 @@ class SidebarWidget(QFrame):
     clear_requested = pyqtSignal()          # 터미널 클리어
     send_command_requested = pyqtSignal(str, int) # 명령 전송 요청 (명령어, 간격ms)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, language: str = "ko"):
 # ... (rest of init same)
         super().__init__(parent)
         self.setObjectName("sidebar")
         self.setMinimumWidth(240)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._language = normalize_language(language)
 
         self._is_connected = False
         self._is_logging = False
         self._log_counters = []
         self._stats_csv_path = ""
+        self._last_log_started_at = ""
         
         # 자동화 관련 상태
         # Task Dict Structure:
@@ -69,7 +72,7 @@ class SidebarWidget(QFrame):
         self._connect_btn = QPushButton()
         self._connect_btn.setFixedSize(34, 34)
         self._connect_btn.setIconSize(QSize(20, 20))
-        self._connect_btn.setToolTip("연결")
+        self._connect_btn.setToolTip(tr(self._language, "sidebar.tooltip.connect"))
         self._connect_btn.setIcon(
             self._make_power_icon(is_on=True, size=20)
         )
@@ -80,7 +83,7 @@ class SidebarWidget(QFrame):
         self._clear_btn.setObjectName("secondaryBtn")
         self._clear_btn.setFixedSize(34, 34)
         self._clear_btn.setIconSize(QSize(22, 22))
-        self._clear_btn.setToolTip("터미널 클리어")
+        self._clear_btn.setToolTip(tr(self._language, "sidebar.tooltip.clear_terminal"))
         self._clear_btn.setIcon(self._make_broom_icon(size=22))
         self._clear_btn.clicked.connect(self.clear_requested.emit)
         action_layout.addWidget(self._clear_btn)
@@ -89,7 +92,7 @@ class SidebarWidget(QFrame):
         self._auto_btn.setObjectName("secondaryBtn")
         self._auto_btn.setFixedSize(34, 34)
         self._auto_btn.setIconSize(QSize(16, 16))
-        self._auto_btn.setToolTip("자동 명령 추가/관리")
+        self._auto_btn.setToolTip(tr(self._language, "sidebar.tooltip.auto_manage"))
         self._auto_btn.setIcon(self._make_robot_icon())
         self._auto_btn.clicked.connect(self._add_automation_task)
         action_layout.addWidget(self._auto_btn)
@@ -99,7 +102,7 @@ class SidebarWidget(QFrame):
         layout.addWidget(action_row)
 
         # === 연결 설정 섹션 (접이식) ===
-        self._conn_toggle_btn = QPushButton("연결 설정 ▼")
+        self._conn_toggle_btn = QPushButton(tr(self._language, "sidebar.conn.expanded"))
         self._conn_toggle_btn.setCheckable(True)
         self._conn_toggle_btn.setChecked(True)
         self._conn_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -145,12 +148,13 @@ class SidebarWidget(QFrame):
         conn_layout.setColumnStretch(0, 0)
         conn_layout.setColumnStretch(1, 1)
 
-        def add_conn_row(row: int, label_text: str, widget: QWidget):
+        def add_conn_row(row: int, label_text: str, widget: QWidget) -> QLabel:
             label = QLabel(label_text)
             label.setMinimumWidth(56)
             label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             conn_layout.addWidget(label, row, 0)
             conn_layout.addWidget(widget, row, 1)
+            return label
 
         # 포트 선택
         port_row = QHBoxLayout()
@@ -168,15 +172,15 @@ class SidebarWidget(QFrame):
             self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
         )
         self._refresh_btn.setIconSize(QSize(16, 16))
-        self._refresh_btn.setToolTip("포트 새로고침")
+        self._refresh_btn.setToolTip(tr(self._language, "sidebar.tooltip.refresh_ports"))
         self._refresh_btn.clicked.connect(self.refresh_ports)
         port_row.addWidget(self._refresh_btn)
 
         # Port Row (Direct Layout)
-        port_label = QLabel("Port:")
-        port_label.setMinimumWidth(56)
-        port_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        conn_layout.addWidget(port_label, 0, 0)
+        self._port_label = QLabel("Port:")
+        self._port_label.setMinimumWidth(56)
+        self._port_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        conn_layout.addWidget(self._port_label, 0, 0)
         conn_layout.addLayout(port_row, 0, 1)
 
         # Baudrate 선택
@@ -188,7 +192,7 @@ class SidebarWidget(QFrame):
         idx = self._baud_combo.findData(SerialManager.DEFAULT_BAUDRATE)
         if idx >= 0:
             self._baud_combo.setCurrentIndex(idx)
-        add_conn_row(1, "Baud:", self._baud_combo)
+        self._baud_label = add_conn_row(1, "Baud:", self._baud_combo)
 
         # Data Bits
         self._data_combo = QComboBox()
@@ -196,21 +200,21 @@ class SidebarWidget(QFrame):
             self._data_combo.addItem(label, value)
         self._data_combo.setFixedHeight(32)
         self._data_combo.setCurrentIndex(3)  # 8 bits
-        add_conn_row(2, "Data:", self._data_combo)
+        self._data_label = add_conn_row(2, "Data:", self._data_combo)
 
         # Parity
         self._parity_combo = QComboBox()
         for label, value in SerialManager.PARITIES.items():
             self._parity_combo.addItem(label, value)
         self._parity_combo.setFixedHeight(32)
-        add_conn_row(3, "Parity:", self._parity_combo)
+        self._parity_label = add_conn_row(3, "Parity:", self._parity_combo)
 
         # Stop Bits
         self._stop_combo = QComboBox()
         for label, value in SerialManager.STOPBITS.items():
             self._stop_combo.addItem(label, value)
         self._stop_combo.setFixedHeight(32)
-        add_conn_row(4, "Stop:", self._stop_combo)
+        self._stop_label = add_conn_row(4, "Stop:", self._stop_combo)
 
         # 터미널 최대 라인 수
         self._max_lines_input = QLineEdit()
@@ -218,19 +222,19 @@ class SidebarWidget(QFrame):
         self._max_lines_input.setText("1000000")
         self._max_lines_input.setFixedHeight(32)
         self._max_lines_input.setValidator(QIntValidator(1, 5_000_000, self))
-        add_conn_row(5, "Buffer:", self._max_lines_input)
+        self._buffer_label = add_conn_row(5, "Buffer:", self._max_lines_input)
 
         layout.addWidget(self._conn_content_widget)
 
         # === 로그 정보 섹션 ===
-        log_group = QGroupBox("로그 파일")
-        log_group.setObjectName("logGroup")
-        log_layout = QVBoxLayout(log_group)
+        self._log_group = QGroupBox(tr(self._language, "sidebar.group.log"))
+        self._log_group.setObjectName("logGroup")
+        log_layout = QVBoxLayout(self._log_group)
         log_layout.setSpacing(8)
         log_layout.setContentsMargins(10, 4, 10, 10)
 
         # 로깅 시작 시간 표시
-        self._log_started_label = QLabel("로깅 시작 시간: -")
+        self._log_started_label = QLabel(tr(self._language, "sidebar.label.log_started_empty"))
         self._log_started_label.setStyleSheet(
             f"background-color: transparent; color: {COLORS['text_secondary']}; font-size: 11px;"
         )
@@ -248,7 +252,7 @@ class SidebarWidget(QFrame):
         self._log_copy_btn.setObjectName("copyBtn")
         self._log_copy_btn.setFixedSize(20, 9)
         self._log_copy_btn.setIconSize(QSize(8, 5))
-        self._log_copy_btn.setToolTip("로그 파일 경로 복사")
+        self._log_copy_btn.setToolTip(tr(self._language, "sidebar.tooltip.copy_log_path"))
         self._log_copy_btn.setIcon(self._make_copy_icon(7))
         self._log_copy_btn.setEnabled(False)
         self._log_copy_btn.clicked.connect(self._copy_log_path)
@@ -271,11 +275,11 @@ class SidebarWidget(QFrame):
         log_path_row_layout.addWidget(self._log_actual_label, 1, Qt.AlignmentFlag.AlignTop)
         log_layout.addWidget(log_path_row)
 
-        layout.addWidget(log_group)
+        layout.addWidget(self._log_group)
 
         # === 문자열 찾기 섹션 ===
-        find_group = QGroupBox("문자열 통계")
-        find_layout = QVBoxLayout(find_group)
+        self._find_group = QGroupBox(tr(self._language, "sidebar.group.stats"))
+        find_layout = QVBoxLayout(self._find_group)
         find_layout.setSpacing(4)
         find_layout.setContentsMargins(10, 4, 10, 4)
 
@@ -301,7 +305,7 @@ class SidebarWidget(QFrame):
         self._stats_copy_btn.setObjectName("copyBtn")
         self._stats_copy_btn.setFixedSize(20, 9)
         self._stats_copy_btn.setIconSize(QSize(8, 5))
-        self._stats_copy_btn.setToolTip("통계 파일 경로 복사")
+        self._stats_copy_btn.setToolTip(tr(self._language, "sidebar.tooltip.copy_stats_path"))
         self._stats_copy_btn.setIcon(self._make_copy_icon(7))
         self._stats_copy_btn.setEnabled(False)
         self._stats_copy_btn.clicked.connect(self._copy_stats_path)
@@ -314,16 +318,16 @@ class SidebarWidget(QFrame):
         case_row_layout.setContentsMargins(0, 0, 0, 0)
         case_row_layout.setSpacing(4)
 
-        self._case_sensitive_checkbox = QCheckBox("대소문자 구분")
+        self._case_sensitive_checkbox = QCheckBox(tr(self._language, "sidebar.checkbox.case_sensitive"))
         self._case_sensitive_checkbox.setChecked(False)
         self._case_sensitive_checkbox.setMinimumHeight(24)
         case_row_layout.addWidget(self._case_sensitive_checkbox, 1)
 
-        self._reset_all_btn = QPushButton("전체 초기화")
+        self._reset_all_btn = QPushButton(tr(self._language, "sidebar.button.reset_all"))
         self._reset_all_btn.setObjectName("secondaryBtn")
         self._reset_all_btn.setFixedHeight(20)
         self._reset_all_btn.setMinimumWidth(82)
-        self._reset_all_btn.setToolTip("문자열 통계 전체 항목 초기화")
+        self._reset_all_btn.setToolTip(tr(self._language, "sidebar.tooltip.reset_all"))
         # Override min-height from styles.py to allow 20px
         self._reset_all_btn.setStyleSheet("QPushButton { min-height: 0px; margin: 0px; padding: 2px; }")
         self._reset_all_btn.clicked.connect(self._reset_all_log_counters)
@@ -354,7 +358,9 @@ class SidebarWidget(QFrame):
 
             # 1. Input Row
             text_input = QLineEdit()
-            text_input.setPlaceholderText(f"문자열 {index + 1}")
+            text_input.setPlaceholderText(
+                tr(self._language, "sidebar.counter.placeholder", index=index + 1)
+            )
             text_input.setMinimumHeight(28)
             text_input.textChanged.connect(
                 lambda _text, idx=index: self._on_log_keyword_changed(idx)
@@ -371,11 +377,11 @@ class SidebarWidget(QFrame):
             info_layout.setContentsMargins(0, 0, 0, 0)
             info_layout.setSpacing(2)
             
-            count_label = QLabel("Count: 0")
+            count_label = QLabel(tr(self._language, "sidebar.counter.count", count=0))
             count_label.setStyleSheet(f"color: {COLORS['text_disabled']}; font-size: 11px; font-weight: bold; background-color: transparent; border: none;")
             info_layout.addWidget(count_label)
             
-            started_at_label = QLabel("Start: -")
+            started_at_label = QLabel(tr(self._language, "sidebar.counter.start_empty"))
             started_at_label.setStyleSheet(f"color: {COLORS['text_disabled']}; font-size: 11px; background-color: transparent; border: none;")
             info_layout.addWidget(started_at_label)
             
@@ -388,13 +394,13 @@ class SidebarWidget(QFrame):
             action_layout.setSpacing(6)
             
             # Status
-            status_label = QLabel("OFF")
+            status_label = QLabel(tr(self._language, "sidebar.counter.state_off"))
             status_label.setStyleSheet(f"color: {COLORS['error']}; font-weight: bold; font-size: 11px; border: none;")
             status_label.setAlignment(Qt.AlignmentFlag.AlignVCenter) # removed right align for tighter packing
             action_layout.addWidget(status_label)
             
             # Toggle Button (Start/Stop) - Same as Automation Info (padding 2px 8px)
-            toggle_btn = QPushButton("Start")
+            toggle_btn = QPushButton(tr(self._language, "sidebar.button.start"))
             toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             toggle_btn.setFixedSize(50, 24)
             # Style set in update_ui, initial style here
@@ -432,7 +438,7 @@ class SidebarWidget(QFrame):
             
             reset_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
             reset_btn.setIconSize(QSize(12, 12))
-            reset_btn.setToolTip("통계 초기화")
+            reset_btn.setToolTip(tr(self._language, "sidebar.tooltip.reset_counter"))
             reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             
             # Match style with toggle_btn for alignment
@@ -470,6 +476,7 @@ class SidebarWidget(QFrame):
                 "started_label": started_at_label,
                 "status_label": status_label,
                 "toggle_btn": toggle_btn,
+                "reset_btn": reset_btn,
                 "count": 0,
                 "started_at": None,
                 "is_running": False,
@@ -481,16 +488,16 @@ class SidebarWidget(QFrame):
         counter_scroll.setWidget(counter_container)
         counter_scroll.setMinimumHeight(190)
         find_layout.addWidget(counter_scroll)
-        layout.addWidget(find_group)
+        layout.addWidget(self._find_group)
 
         # === 자동 명령 정보 및 목록 섹션 (New) ===
-        auto_info_group = QGroupBox("자동 명령 정보")
-        auto_info_layout = QVBoxLayout(auto_info_group)
+        self._auto_info_group = QGroupBox(tr(self._language, "sidebar.group.auto"))
+        auto_info_layout = QVBoxLayout(self._auto_info_group)
         auto_info_layout.setContentsMargins(10, 8, 10, 10)
         auto_info_layout.setSpacing(4)
 
         # 대소문자 구분 (New)
-        self._auto_case_checkbox = QCheckBox("대소문자 구분")
+        self._auto_case_checkbox = QCheckBox(tr(self._language, "sidebar.checkbox.case_sensitive"))
         self._auto_case_checkbox.setChecked(False)
         auto_info_layout.addWidget(self._auto_case_checkbox)
 
@@ -510,19 +517,54 @@ class SidebarWidget(QFrame):
         self._auto_list_scroll.setWidget(self._auto_list_container)
         auto_info_layout.addWidget(self._auto_list_scroll)
         
-        layout.addWidget(auto_info_group)
+        layout.addWidget(self._auto_info_group)
         
         # Ratio & Size Policy
-        find_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        auto_info_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        layout.setStretchFactor(find_group, 6)
-        layout.setStretchFactor(auto_info_group, 4)
+        self._find_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self._auto_info_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout.setStretchFactor(self._find_group, 6)
+        layout.setStretchFactor(self._auto_info_group, 4)
 
         # 하단 여백
         layout.addStretch()
 
         # 초기 포트 스캔
         self.refresh_ports()
+
+    def set_language(self, language: str):
+        self._language = normalize_language(language)
+        self._connect_btn.setToolTip(
+            tr(self._language, "sidebar.tooltip.disconnect")
+            if self._is_connected
+            else tr(self._language, "sidebar.tooltip.connect")
+        )
+        self._clear_btn.setToolTip(tr(self._language, "sidebar.tooltip.clear_terminal"))
+        self._auto_btn.setToolTip(tr(self._language, "sidebar.tooltip.auto_manage"))
+        self._refresh_btn.setToolTip(tr(self._language, "sidebar.tooltip.refresh_ports"))
+        self._log_copy_btn.setToolTip(tr(self._language, "sidebar.tooltip.copy_log_path"))
+        self._stats_copy_btn.setToolTip(tr(self._language, "sidebar.tooltip.copy_stats_path"))
+        self._conn_toggle_btn.setText(
+            tr(self._language, "sidebar.conn.expanded")
+            if self._conn_toggle_btn.isChecked()
+            else tr(self._language, "sidebar.conn.collapsed")
+        )
+        self._log_group.setTitle(tr(self._language, "sidebar.group.log"))
+        self._find_group.setTitle(tr(self._language, "sidebar.group.stats"))
+        self._auto_info_group.setTitle(tr(self._language, "sidebar.group.auto"))
+        self._case_sensitive_checkbox.setText(tr(self._language, "sidebar.checkbox.case_sensitive"))
+        self._auto_case_checkbox.setText(tr(self._language, "sidebar.checkbox.case_sensitive"))
+        self._reset_all_btn.setText(tr(self._language, "sidebar.button.reset_all"))
+        self._reset_all_btn.setToolTip(tr(self._language, "sidebar.tooltip.reset_all"))
+        self.set_log_started_time(self._last_log_started_at)
+        for index, counter in enumerate(self._log_counters):
+            counter["input"].setPlaceholderText(
+                tr(self._language, "sidebar.counter.placeholder", index=index + 1)
+            )
+            counter["reset_btn"].setToolTip(tr(self._language, "sidebar.tooltip.reset_counter"))
+            self._update_log_counter_ui(index)
+        if self._port_combo.count() == 1 and self._port_combo.itemData(0) is None:
+            self._port_combo.setItemText(0, tr(self._language, "sidebar.port_not_found"))
+        self._refresh_automation_list()
 
     def load_configs_from_env(self):
         """환경 변수(.env)에서 문자열 통계 및 자동 명령 설정을 읽어와 적용"""
@@ -549,14 +591,14 @@ class SidebarWidget(QFrame):
 
         # 2. 사용자 확인 (CONFIRM 모드)
         if mode == "CONFIRM":
-            msg = "환경 변수(.env)에 사전 설정된 데이터가 있습니다. 불러오시겠습니까?\n\n"
+            msg = tr(self._language, "sidebar.dialog.load.prompt")
             if stats_list:
-                msg += f"• 문자열 통계: {len(stats_list)}개\n"
+                msg += tr(self._language, "sidebar.dialog.load.stats", count=len(stats_list))
             if autos_list:
-                msg += f"• 자동 명령: {len(autos_list)}개\n"
+                msg += tr(self._language, "sidebar.dialog.load.autos", count=len(autos_list))
 
             reply = QMessageBox.question(
-                self, "설정 불러오기", msg,
+                self, tr(self._language, "sidebar.dialog.load.title"), msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes
             )
@@ -577,7 +619,7 @@ class SidebarWidget(QFrame):
             
             # 필수 필드 보정 및 기본값 채우기
             task = {
-                "name": task_data.get("name", "AutoTask"),
+                "name": task_data.get("name", tr(self._language, "automation.default_name")),
                 "pre_cmd": task_data.get("pre_cmd", ""),
                 "trigger": task_data.get("trigger", ""),
                 "post_cmd": task_data.get("post_cmd", ""),
@@ -666,11 +708,15 @@ class SidebarWidget(QFrame):
     def _add_automation_task(self):
         """새 자동 명령 추가 (최대 MAX_AUTO_TASKS)"""
         if len(self._automation_tasks) >= self.MAX_AUTO_TASKS:
-            QMessageBox.warning(self, "추가 실패", f"자동 명령은 최대 {self.MAX_AUTO_TASKS}개까지만 등록할 수 있습니다.")
+            QMessageBox.warning(
+                self,
+                tr(self._language, "sidebar.dialog.add_failed.title"),
+                tr(self._language, "sidebar.dialog.add_failed.body", max_count=self.MAX_AUTO_TASKS),
+            )
             return
         
         # 빈 태스크로 다이얼로그 열기
-        dialog = AutomationDialog(self)
+        dialog = AutomationDialog(self, language=self._language)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
             self._automation_tasks.append(data)
@@ -695,7 +741,7 @@ class SidebarWidget(QFrame):
             return
             
         task = self._automation_tasks[index]
-        dialog = AutomationDialog(self, task)
+        dialog = AutomationDialog(self, task, language=self._language)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_data = dialog.get_data()
             self._automation_tasks[index] = new_data
@@ -766,10 +812,10 @@ class SidebarWidget(QFrame):
             
             # Status text
             if is_enabled:
-                status_text = "ON"
+                status_text = tr(self._language, "sidebar.counter.state_on")
                 status_color = COLORS['success']
             else:
-                status_text = "OFF"
+                status_text = tr(self._language, "sidebar.counter.state_off")
                 status_color = COLORS['error']
 
             status_lbl = QLabel(status_text)
@@ -779,11 +825,11 @@ class SidebarWidget(QFrame):
 
             # Start/Stop Control
             if is_enabled:
-                 ctl_text = "Stop"
+                 ctl_text = tr(self._language, "sidebar.button.stop")
                  ctl_color = COLORS['error']
                  ctl_callback = lambda _, idx=i: self._stop_task(idx)
             else:
-                 ctl_text = "Start"
+                 ctl_text = tr(self._language, "sidebar.button.start")
                  ctl_color = COLORS['success']
                  ctl_callback = lambda _, idx=i: self._start_task(idx)
 
@@ -808,7 +854,7 @@ class SidebarWidget(QFrame):
             frame_layout.addWidget(ctl_btn)
 
             # Delete Button
-            del_btn = QPushButton("Del")
+            del_btn = QPushButton(tr(self._language, "sidebar.button.delete"))
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             del_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -911,7 +957,7 @@ class SidebarWidget(QFrame):
                     port_info["path"]
                 )
         else:
-            self._port_combo.addItem("포트를 찾을 수 없음")
+            self._port_combo.addItem(tr(self._language, "sidebar.port_not_found"))
 
     def _on_connect_clicked(self):
         """연결/해제 버튼 클릭"""
@@ -988,13 +1034,16 @@ class SidebarWidget(QFrame):
 
     def set_log_started_time(self, timestamp: str):
         """로깅 시작 시간 표시"""
+        self._last_log_started_at = timestamp or ""
         if timestamp:
-            self._log_started_label.setText(f"로깅 시작 시간: {timestamp}")
+            self._log_started_label.setText(
+                tr(self._language, "sidebar.label.log_started", timestamp=timestamp)
+            )
             self._log_started_label.setStyleSheet(
                 f"background-color: transparent; color: {COLORS['warning']}; font-size: 11px;"
             )
         else:
-            self._log_started_label.setText("로깅 시작 시간: -")
+            self._log_started_label.setText(tr(self._language, "sidebar.label.log_started_empty"))
             self._log_started_label.setStyleSheet(
                 f"background-color: transparent; color: {COLORS['text_secondary']}; font-size: 11px;"
             )
@@ -1007,7 +1056,7 @@ class SidebarWidget(QFrame):
             self._connect_btn.setIcon(
                 self._make_power_icon(is_on=False)
             )
-            self._connect_btn.setToolTip("연결 해제")
+            self._connect_btn.setToolTip(tr(self._language, "sidebar.tooltip.disconnect"))
             self._port_combo.setEnabled(False)
             self._baud_combo.setEnabled(False)
             self._data_combo.setEnabled(False)
@@ -1020,7 +1069,7 @@ class SidebarWidget(QFrame):
             self._connect_btn.setIcon(
                 self._make_power_icon(is_on=True)
             )
-            self._connect_btn.setToolTip("연결")
+            self._connect_btn.setToolTip(tr(self._language, "sidebar.tooltip.connect"))
             self._port_combo.setEnabled(True)
             self._baud_combo.setEnabled(True)
             self._data_combo.setEnabled(True)
@@ -1036,7 +1085,11 @@ class SidebarWidget(QFrame):
     def _on_conn_toggle(self, checked: bool):
         """연결 설정 토글 핸들러"""
         self._conn_content_widget.setVisible(checked)
-        self._conn_toggle_btn.setText("연결 설정 ▼" if checked else "연결 설정 ▲")
+        self._conn_toggle_btn.setText(
+            tr(self._language, "sidebar.conn.expanded")
+            if checked
+            else tr(self._language, "sidebar.conn.collapsed")
+        )
 
     @staticmethod
     def _make_broom_icon(size: int = 22) -> QIcon:
@@ -1129,16 +1182,18 @@ class SidebarWidget(QFrame):
             label_color = inactive_color
 
         # 1. Labels
-        counter["count_label"].setText(f"Count: {counter['count']}")
+        counter["count_label"].setText(
+            tr(self._language, "sidebar.counter.count", count=counter["count"])
+        )
         counter["count_label"].setStyleSheet(
             f"color: {label_color}; font-size: 11px; font-weight: bold; background-color: transparent; border: none;"
         )
         
         if counter["started_at"] is None or counter["started_at"] == 0:
-            started_text = "Start: -"
+            started_text = tr(self._language, "sidebar.counter.start_empty")
         else:
             full_started_at = counter["started_at"].strftime("%Y-%m-%d %H:%M:%S")
-            started_text = f"Start: {full_started_at}"
+            started_text = tr(self._language, "sidebar.counter.start", timestamp=full_started_at)
             
         counter["started_label"].setText(started_text)
         counter["started_label"].setStyleSheet(
@@ -1147,14 +1202,14 @@ class SidebarWidget(QFrame):
 
         # 2. Status & Loop Control
         if is_running:
-            status_text = "ON"
+            status_text = tr(self._language, "sidebar.counter.state_on")
             status_color = COLORS["success"]
-            ctl_text = "Stop"
+            ctl_text = tr(self._language, "sidebar.button.stop")
             ctl_color = COLORS["error"]
         else:
-            status_text = "OFF"
+            status_text = tr(self._language, "sidebar.counter.state_off")
             status_color = COLORS["error"] # Red/Grey for OFF
-            ctl_text = "Start"
+            ctl_text = tr(self._language, "sidebar.button.start")
             ctl_color = COLORS["success"]
             
         counter["status_label"].setText(status_text)
@@ -1293,13 +1348,23 @@ class SidebarWidget(QFrame):
             with open(self._stats_csv_path, "a", newline="", encoding="utf-8") as fp:
                 writer = csv.writer(fp)
                 if needs_header:
-                    writer.writerow(["문자열", "집계 시점", "누적 카운트", "대소문자 구분", "로그"])
+                    writer.writerow(
+                        [
+                            tr(self._language, "sidebar.csv.header.keyword"),
+                            tr(self._language, "sidebar.csv.header.timestamp"),
+                            tr(self._language, "sidebar.csv.header.count"),
+                            tr(self._language, "sidebar.csv.header.case"),
+                            tr(self._language, "sidebar.csv.header.log"),
+                        ]
+                    )
                 writer.writerow(
                     [
                         keyword,
                         normalized_time,
                         count,
-                        "예" if self._case_sensitive_checkbox.isChecked() else "아니오",
+                        tr(self._language, "sidebar.csv.case_yes")
+                        if self._case_sensitive_checkbox.isChecked()
+                        else tr(self._language, "sidebar.csv.case_no"),
                         log_line,
                     ]
                 )
@@ -1343,5 +1408,3 @@ class SidebarWidget(QFrame):
                 self._update_log_counter_ui(index)
 
     # === 자동 명령 수행 ===
-
-

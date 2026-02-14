@@ -11,14 +11,15 @@ from PyQt6.QtWidgets import (
     QSplitter, QLineEdit, QLabel, QStatusBar, QPushButton,
     QMenuBar, QMessageBox, QApplication, QFrame
 )
-from PyQt6.QtGui import QAction, QShortcut, QKeySequence, QFont
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QAction, QActionGroup, QShortcut, QKeySequence, QFont
+from PyQt6.QtCore import Qt, QTimer, QSettings
 
 from serial_manager import SerialManager
 from log_manager import LogManager
 from terminal_widget import TerminalWidget
 from search_widget import SearchWidget
 from sidebar_widget import SidebarWidget
+from i18n import normalize_language, tr
 from styles import (
     COLORS,
     get_main_stylesheet, get_command_input_stylesheet,
@@ -29,14 +30,19 @@ from styles import (
 class CommandInput(QLineEdit):
     """명령 입력 위젯 (히스토리 기능 포함)"""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, language: str = "ko"):
         super().__init__(parent)
+        self._language = normalize_language(language)
         self.setStyleSheet(get_command_input_stylesheet())
-        self.setPlaceholderText("명령을 입력하세요... (Enter로 전송)")
+        self.setPlaceholderText(tr(self._language, "command.placeholder"))
 
         self._history: list[str] = []
         self._history_index: int = -1
         self._max_history: int = 100
+
+    def set_language(self, language: str):
+        self._language = normalize_language(language)
+        self.setPlaceholderText(tr(self._language, "command.placeholder"))
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Up:
@@ -75,15 +81,17 @@ class CommandInput(QLineEdit):
 class MainWindow(QMainWindow):
     """메인 윈도우"""
 
-    APP_TITLE = "LnxTerm - 시리얼 터미널"
-    APP_VERSION = "v1.8.4"
+    APP_VERSION = "v1.8.5"
     DEFAULT_RECONNECT_INTERVAL_MS = 3000
     ENV_RECONNECT_INTERVAL_MS = "RECONNECT_INTERVAL_MS"
     ENV_RECONNECT_INTERVAL_SEC = "RECONNECT_INTERVAL_SEC"
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(self.APP_TITLE)
+        self._settings = QSettings("LnxTerm", "LnxTerm")
+        self._language = normalize_language(self._settings.value("language", "en", type=str))
+        self._app_title = tr(self._language, "app.title")
+        self.setWindowTitle(self._app_title)
         self.setMinimumSize(1000, 650)
         self.resize(1280, 768)
 
@@ -125,21 +133,27 @@ class MainWindow(QMainWindow):
         # 환경 변수 사전 설정 로드
         self._sidebar.load_configs_from_env()
 
+        self._apply_language()
+
         # 초기 상태
         self._update_statusbar_style(False)
-        self._terminal.append_system_message("LnxTerm 시리얼 터미널이 시작되었습니다.")
+        self._terminal.append_system_message(tr(self._language, "msg.app_started"))
 
         # LOG_DIR 확인
         if self._log_dir:
-            self._terminal.append_system_message(f"로그 디렉토리: {self._log_dir}")
+            self._terminal.append_system_message(
+                tr(self._language, "msg.log_dir", path=self._log_dir)
+            )
         else:
-            self._terminal.append_system_message("로그 디렉토리가 설정되지 않았습니다. 연결 시 설정합니다.")
+            self._terminal.append_system_message(tr(self._language, "msg.log_dir_not_set"))
         self._terminal.append_system_message(
-            f"자동 재연결 간격: {self._get_reconnect_delay_text()}"
+            tr(self._language, "msg.reconnect_interval", interval=self._get_reconnect_delay_text())
         )
-        self._terminal.append_system_message(f".env 경로: {self._env_path}")
+        self._terminal.append_system_message(
+            tr(self._language, "msg.env_path", path=self._env_path)
+        )
 
-        self._terminal.append_system_message("사이드바에서 포트를 선택하고 연결하세요.\n")
+        self._terminal.append_system_message(tr(self._language, "msg.select_port"))
 
     def _setup_menu_bar(self):
         """메뉴바 구성"""
@@ -147,65 +161,79 @@ class MainWindow(QMainWindow):
         menubar.setNativeMenuBar(False)
 
         # 파일 메뉴
-        file_menu = menubar.addMenu("파일(&F)")
+        self._file_menu = menubar.addMenu("")
 
-        log_start_action = QAction("로그 시작...", self)
-        log_start_action.setShortcut("Ctrl+L")
-        log_start_action.triggered.connect(self._on_log_start_menu)
-        file_menu.addAction(log_start_action)
+        self._log_start_action = QAction("", self)
+        self._log_start_action.setShortcut("Ctrl+L")
+        self._log_start_action.triggered.connect(self._on_log_start_menu)
+        self._file_menu.addAction(self._log_start_action)
 
-        log_stop_action = QAction("로그 중지", self)
-        log_stop_action.triggered.connect(self._on_log_stop)
-        file_menu.addAction(log_stop_action)
+        self._log_stop_action = QAction("", self)
+        self._log_stop_action.triggered.connect(self._on_log_stop)
+        self._file_menu.addAction(self._log_stop_action)
 
-        file_menu.addSeparator()
+        self._file_menu.addSeparator()
 
-        update_env_action = QAction("환경 변수 업데이트", self)
-        update_env_action.setShortcut("Ctrl+S")
-        update_env_action.triggered.connect(self._on_update_env_configs)
-        file_menu.addAction(update_env_action)
+        self._update_env_action = QAction("", self)
+        self._update_env_action.setShortcut("Ctrl+S")
+        self._update_env_action.triggered.connect(self._on_update_env_configs)
+        self._file_menu.addAction(self._update_env_action)
 
-        file_menu.addSeparator()
+        self._file_menu.addSeparator()
 
-        exit_action = QAction("종료(&X)", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+        self._exit_action = QAction("", self)
+        self._exit_action.setShortcut("Ctrl+Q")
+        self._exit_action.triggered.connect(self.close)
+        self._file_menu.addAction(self._exit_action)
 
         # 편집 메뉴
-        edit_menu = menubar.addMenu("편집(&E)")
+        self._edit_menu = menubar.addMenu("")
 
-        find_action = QAction("검색(&F)", self)
-        find_action.setShortcut("Ctrl+F")
-        find_action.triggered.connect(self._toggle_search)
-        edit_menu.addAction(find_action)
+        self._find_action = QAction("", self)
+        self._find_action.setShortcut("Ctrl+F")
+        self._find_action.triggered.connect(self._toggle_search)
+        self._edit_menu.addAction(self._find_action)
 
-        edit_menu.addSeparator()
+        self._edit_menu.addSeparator()
 
-        clear_action = QAction("터미널 클리어", self)
-        clear_action.setShortcut("Ctrl+Shift+C")
-        clear_action.triggered.connect(self._clear_terminal)
-        edit_menu.addAction(clear_action)
+        self._clear_action = QAction("", self)
+        self._clear_action.setShortcut("Ctrl+Shift+C")
+        self._clear_action.triggered.connect(self._clear_terminal)
+        self._edit_menu.addAction(self._clear_action)
 
         # 보기 메뉴
-        view_menu = menubar.addMenu("보기(&V)")
+        self._view_menu = menubar.addMenu("")
 
-        sidebar_action = QAction("사이드바 토글", self)
-        sidebar_action.setShortcut("Ctrl+B")
-        sidebar_action.triggered.connect(self._toggle_sidebar)
-        view_menu.addAction(sidebar_action)
+        self._sidebar_action = QAction("", self)
+        self._sidebar_action.setShortcut("Ctrl+B")
+        self._sidebar_action.triggered.connect(self._toggle_sidebar)
+        self._view_menu.addAction(self._sidebar_action)
 
-        refresh_action = QAction("포트 새로고침", self)
-        refresh_action.setShortcut("F5")
-        refresh_action.triggered.connect(lambda: self._sidebar.refresh_ports())
-        view_menu.addAction(refresh_action)
+        self._refresh_action = QAction("", self)
+        self._refresh_action.setShortcut("F5")
+        self._refresh_action.triggered.connect(lambda: self._sidebar.refresh_ports())
+        self._view_menu.addAction(self._refresh_action)
+
+        self._language_menu = menubar.addMenu("")
+        self._language_action_group = QActionGroup(self)
+        self._language_action_group.setExclusive(True)
+
+        self._lang_ko_action = QAction("", self, checkable=True)
+        self._lang_ko_action.triggered.connect(lambda checked: checked and self._set_language("ko"))
+        self._language_action_group.addAction(self._lang_ko_action)
+        self._language_menu.addAction(self._lang_ko_action)
+
+        self._lang_en_action = QAction("", self, checkable=True)
+        self._lang_en_action.triggered.connect(lambda checked: checked and self._set_language("en"))
+        self._language_action_group.addAction(self._lang_en_action)
+        self._language_menu.addAction(self._lang_en_action)
 
         # 도움말 메뉴
-        help_menu = menubar.addMenu("도움말(&H)")
+        self._help_menu = menubar.addMenu("")
 
-        about_action = QAction("LnxTerm 정보", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
+        self._about_action = QAction("", self)
+        self._about_action.triggered.connect(self._show_about)
+        self._help_menu.addAction(self._about_action)
 
     def _setup_central_widget(self):
         """중앙 위젯 구성"""
@@ -222,7 +250,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self._splitter, 1)
 
         # 사이드바
-        self._sidebar = SidebarWidget()
+        self._sidebar = SidebarWidget(language=self._language)
         self._splitter.addWidget(self._sidebar)
 
         # 오른쪽 영역 (터미널 + 검색 + 입력)
@@ -233,7 +261,7 @@ class MainWindow(QMainWindow):
 
         # 검색 위젯
         self._terminal = TerminalWidget()
-        self._search = SearchWidget(self._terminal)
+        self._search = SearchWidget(self._terminal, language=self._language)
         right_layout.addWidget(self._search)
 
         # 터미널
@@ -254,16 +282,16 @@ class MainWindow(QMainWindow):
         )
         input_layout.addWidget(prompt_label)
 
-        self._command_input = CommandInput()
+        self._command_input = CommandInput(language=self._language)
         self._command_input.returnPressed.connect(self._send_command)
         input_layout.addWidget(self._command_input, 1)
 
         # 전송 버튼
-        send_btn = QPushButton("전송")
-        send_btn.setFixedHeight(30)
-        send_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        send_btn.clicked.connect(self._send_command)
-        input_layout.addWidget(send_btn)
+        self._send_btn = QPushButton(tr(self._language, "button.send"))
+        self._send_btn.setFixedHeight(30)
+        self._send_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._send_btn.clicked.connect(self._send_command)
+        input_layout.addWidget(self._send_btn)
 
         right_layout.addWidget(input_frame)
 
@@ -276,7 +304,7 @@ class MainWindow(QMainWindow):
         """상태바 구성"""
         self._statusbar = self.statusBar()
 
-        self._status_connection = QLabel("⚫ 연결 안됨")
+        self._status_connection = QLabel(tr(self._language, "status.disconnected"))
         self._status_port = QLabel("")
         self._status_baud = QLabel("")
         self._status_rx = QLabel("RX: 0")
@@ -312,6 +340,56 @@ class MainWindow(QMainWindow):
         # 터미널 엔터 시 커맨드 입력창으로 포커스
         self._terminal.return_pressed.connect(self._command_input.setFocus)
 
+    def _set_language(self, language: str):
+        normalized = normalize_language(language)
+        if normalized == self._language:
+            return
+        self._language = normalized
+        self._settings.setValue("language", normalized)
+        self._apply_language()
+
+    def _apply_language(self):
+        self._app_title = tr(self._language, "app.title")
+        self._file_menu.setTitle(tr(self._language, "menu.file"))
+        self._edit_menu.setTitle(tr(self._language, "menu.edit"))
+        self._view_menu.setTitle(tr(self._language, "menu.view"))
+        self._help_menu.setTitle(tr(self._language, "menu.help"))
+        self._language_menu.setTitle(tr(self._language, "menu.language"))
+
+        self._log_start_action.setText(tr(self._language, "action.log_start"))
+        self._log_stop_action.setText(tr(self._language, "action.log_stop"))
+        self._update_env_action.setText(tr(self._language, "action.update_env"))
+        self._exit_action.setText(tr(self._language, "action.exit"))
+        self._find_action.setText(tr(self._language, "action.find"))
+        self._clear_action.setText(tr(self._language, "action.clear_terminal"))
+        self._sidebar_action.setText(tr(self._language, "action.toggle_sidebar"))
+        self._refresh_action.setText(tr(self._language, "action.refresh_ports"))
+        self._about_action.setText(tr(self._language, "action.about"))
+        self._lang_ko_action.setText(tr(self._language, "action.lang_ko"))
+        self._lang_en_action.setText(tr(self._language, "action.lang_en"))
+
+        self._lang_ko_action.setChecked(self._language == "ko")
+        self._lang_en_action.setChecked(self._language == "en")
+
+        self._command_input.set_language(self._language)
+        self._send_btn.setText(tr(self._language, "button.send"))
+        self._search.set_language(self._language)
+        self._sidebar.set_language(self._language)
+        self._update_connection_status_text()
+
+        if self._serial.is_connected() and self._serial.port_name:
+            self.setWindowTitle(f"{self._app_title} - {self._serial.port_name}")
+        else:
+            self.setWindowTitle(self._app_title)
+
+    def _update_connection_status_text(self):
+        if self._serial.is_connected():
+            self._status_connection.setText(tr(self._language, "status.connected"))
+        elif self._reconnect_timer.isActive():
+            self._status_connection.setText(tr(self._language, "status.reconnecting"))
+        else:
+            self._status_connection.setText(tr(self._language, "status.disconnected"))
+
     # === 시리얼 연결 ===
 
     def _on_connect(self, settings: dict, silent: bool = False) -> bool:
@@ -335,19 +413,28 @@ class MainWindow(QMainWindow):
                     [f"  • {p['name']} (PID: {p['pid']})" for p in in_use]
                 )
                 self._terminal.append_system_message(
-                    f"⚠️  경고: {port} 가 다음 프로세스에 의해 사용 중입니다:\n"
-                    f"{procs_info}\n"
+                    tr(
+                        self._language,
+                        "msg.port_in_use_warning_terminal",
+                        port=port,
+                        procs=procs_info,
+                    )
                 )
                 if not silent:
                     reply = QMessageBox.warning(
-                        self, "포트 사용 중",
-                        f"{port} 포트가 이미 사용 중입니다:\n\n{procs_info}\n\n"
-                        f"그래도 연결을 시도하시겠습니까?",
+                        self,
+                        tr(self._language, "dialog.port_in_use.title"),
+                        tr(
+                            self._language,
+                            "dialog.port_in_use.body",
+                            port=port,
+                            procs=procs_info,
+                        ),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.No,
                     )
                     if reply != QMessageBox.StandardButton.Yes:
-                        self._terminal.append_system_message("연결 취소됨.\n")
+                        self._terminal.append_system_message(tr(self._language, "msg.connect_canceled"))
                         return False
 
             self._serial.connect(
@@ -370,7 +457,7 @@ class MainWindow(QMainWindow):
             # UI 업데이트
             self._sidebar.set_connected_state(True)
             self._update_statusbar_style(True)
-            self._status_connection.setText("🟢 연결됨")
+            self._update_connection_status_text()
             self._status_port.setText(f"📡 {settings['port']}")
             self._status_baud.setText(f"⚡ {settings['baudrate']} bps")
             self._rx_bytes = 0
@@ -378,18 +465,29 @@ class MainWindow(QMainWindow):
             self._update_byte_counts()
 
             self._terminal.append_system_message(
-                f"연결됨: {settings['port']} @ {settings['baudrate']} bps\n"
+                tr(
+                    self._language,
+                    "msg.connected",
+                    port=settings["port"],
+                    baudrate=settings["baudrate"],
+                )
             )
 
-            self.setWindowTitle(f"{self.APP_TITLE} - {settings['port']}")
+            self.setWindowTitle(f"{self._app_title} - {settings['port']}")
 
             # 연결 시 자동 로그 시작
             self._auto_start_logging()
             return True
 
         except Exception as e:
-            QMessageBox.critical(self, "연결 오류", f"시리얼 포트 연결에 실패했습니다:\n{str(e)}")
-            self._terminal.append_system_message(f"연결 실패: {str(e)}\n")
+            QMessageBox.critical(
+                self,
+                tr(self._language, "dialog.connect_error.title"),
+                tr(self._language, "dialog.connect_error.body", error=str(e)),
+            )
+            self._terminal.append_system_message(
+                tr(self._language, "msg.connect_failed", error=str(e))
+            )
             return False
 
     def _ensure_log_dir(self) -> bool:
@@ -407,11 +505,11 @@ class MainWindow(QMainWindow):
 
         from PyQt6.QtWidgets import QFileDialog
         dir_path = QFileDialog.getExistingDirectory(
-            self, "로그 저장 디렉토리 선택"
+            self, tr(self._language, "dialog.select_log_dir")
         )
         if not dir_path:
             self._terminal.append_system_message(
-                "로그 디렉토리를 지정해야 연결할 수 있습니다.\n"
+                tr(self._language, "msg.log_dir_required")
             )
             return False
 
@@ -419,7 +517,9 @@ class MainWindow(QMainWindow):
         self._log_dir = os.path.abspath(os.path.expanduser(dir_path))
         os.environ["LOG_DIR"] = self._log_dir
         set_key(self._env_path, "LOG_DIR", self._log_dir)
-        self._terminal.append_system_message(f"로그 디렉토리 설정: {self._log_dir}\n")
+        self._terminal.append_system_message(
+            tr(self._language, "msg.log_dir_set", path=self._log_dir)
+        )
         return True
 
     def _resolve_env_path(self) -> str:
@@ -492,8 +592,16 @@ class MainWindow(QMainWindow):
     def _get_reconnect_delay_text(self) -> str:
         """자동 재연결 주기를 화면 표시용 텍스트로 변환."""
         if self._reconnect_interval_ms % 1000 == 0:
-            return f"{self._reconnect_interval_ms // 1000}초"
-        return f"{self._reconnect_interval_ms / 1000:g}초"
+            return tr(
+                self._language,
+                "time.seconds.integer",
+                value=self._reconnect_interval_ms // 1000,
+            )
+        return tr(
+            self._language,
+            "time.seconds.float",
+            value=self._reconnect_interval_ms / 1000,
+        )
 
     def _generate_log_filename(self) -> str:
         """로그 파일명 자동 생성: lnxterm_YYYYMMDD_HHMMSS.log"""
@@ -516,41 +624,53 @@ class MainWindow(QMainWindow):
 
         self._sidebar.set_connected_state(False)
         self._update_statusbar_style(False)
-        self._status_connection.setText("⚫ 연결 안됨")
         self._status_port.setText("")
         self._status_baud.setText("")
 
-        self._terminal.append_system_message(f"연결 해제: {port_name}\n")
-        self.setWindowTitle(self.APP_TITLE)
+        self._terminal.append_system_message(
+            tr(self._language, "msg.disconnected", port=port_name)
+        )
+        self.setWindowTitle(self._app_title)
 
         self._on_log_stop(clear_display=False)
         if manual:
             # 수동 해제: 재연결 안 함, 로그 중지
             self._manual_disconnect = True
             self._reconnect_timer.stop()
+            self._update_connection_status_text()
         else:
             # 비정상 끊김: 자동 재연결 시도
             if self._auto_reconnect and self._last_settings:
                 self._terminal.append_system_message(
-                    f"{self._get_reconnect_delay_text()} 후 자동 재연결 시도...\n"
+                    tr(
+                        self._language,
+                        "msg.auto_reconnect_after",
+                        delay=self._get_reconnect_delay_text(),
+                    )
                 )
-                self._status_connection.setText("🟡 재연결 대기")
                 self._reconnect_timer.start()
+        self._update_connection_status_text()
 
     def _try_reconnect(self):
         """자동 재연결 시도"""
         self._reconnect_timer.stop()
         if self._manual_disconnect or not self._last_settings:
+            self._update_connection_status_text()
             return
 
-        self._terminal.append_system_message("재연결 시도 중...\n")
+        self._terminal.append_system_message(tr(self._language, "msg.reconnect_trying"))
         reconnected = self._on_connect(self._last_settings, silent=True)
         if not reconnected:
             # 실패 시 설정된 주기 후 재시도
             self._terminal.append_system_message(
-                f"재연결 실패, {self._get_reconnect_delay_text()} 후 다시 시도...\n"
+                tr(
+                    self._language,
+                    "msg.reconnect_failed",
+                    delay=self._get_reconnect_delay_text(),
+                )
             )
             self._reconnect_timer.start()
+            self._update_connection_status_text()
 
     def _on_data_received(self, data: bytes):
         """시리얼 데이터 수신"""
@@ -573,7 +693,9 @@ class MainWindow(QMainWindow):
 
     def _on_serial_error(self, error_msg: str):
         """시리얼 오류 처리 - 비정상 끊김, 자동 재연결 시도"""
-        self._terminal.append_system_message(f"오류: {error_msg}\n")
+        self._terminal.append_system_message(
+            tr(self._language, "msg.error_prefix", error=error_msg)
+        )
         self._on_disconnect(manual=False)
 
     def _send_command(self):
@@ -604,7 +726,7 @@ class MainWindow(QMainWindow):
             lines = [""]
 
         if not self._serial.is_connected():
-            self._terminal.append_system_message("포트가 연결되지 않았습니다.\n")
+            self._terminal.append_system_message(tr(self._language, "msg.port_not_connected"))
             return
 
         if interval_ms <= 0:
@@ -613,7 +735,9 @@ class MainWindow(QMainWindow):
                     self._send_line_logic(line)
                 self._update_byte_counts()
             except Exception as e:
-                self._terminal.append_system_message(f"전송 오류: {str(e)}\n")
+                self._terminal.append_system_message(
+                    tr(self._language, "msg.send_error", error=str(e))
+                )
         else:
             self._send_lines_delayed(lines, interval_ms)
 
@@ -645,7 +769,9 @@ class MainWindow(QMainWindow):
             else:
                 self._update_byte_counts()
         except Exception as e:
-            self._terminal.append_system_message(f"전송 오류 (지연 전송): {str(e)}\n")
+            self._terminal.append_system_message(
+                tr(self._language, "msg.send_error_delayed", error=str(e))
+            )
 
     # === 로그 관리 ===
     # === 로그 관리 ===
@@ -670,9 +796,15 @@ class MainWindow(QMainWindow):
             self._sidebar.set_log_started_time(self._log.started_at)
             self._sidebar.set_actual_log_filename(file_path)
             self._status_log.setText(f"📝 {os.path.basename(file_path)}")
-            self._terminal.append_system_message(f"로그 기록 시작: {file_path}\n")
+            self._terminal.append_system_message(
+                tr(self._language, "msg.log_start", path=file_path)
+            )
         except Exception as e:
-            QMessageBox.critical(self, "로그 오류", f"로그 파일을 열 수 없습니다:\n{str(e)}")
+            QMessageBox.critical(
+                self,
+                tr(self._language, "dialog.log_error.title"),
+                tr(self._language, "dialog.log_error.body", error=str(e)),
+            )
 
     def _on_log_stop(self, clear_display: bool = True):
         """로그 기록 중지"""
@@ -682,7 +814,9 @@ class MainWindow(QMainWindow):
             self._sidebar.set_logging_state(False, clear_display=clear_display)
             if clear_display:
                 self._status_log.setText("")
-            self._terminal.append_system_message(f"로그 기록 종료: {path}\n")
+            self._terminal.append_system_message(
+                tr(self._language, "msg.log_stop", path=path)
+            )
 
     # === UI 도구 ===
 
@@ -700,7 +834,7 @@ class MainWindow(QMainWindow):
     def _clear_terminal(self):
         """터미널 클리어"""
         self._terminal.clear_terminal()
-        self._terminal.append_system_message("터미널이 초기화되었습니다.\n")
+        self._terminal.append_system_message(tr(self._language, "msg.terminal_cleared"))
 
     def _update_byte_counts(self):
         """RX/TX 바이트 카운트 업데이트"""
@@ -728,31 +862,34 @@ class MainWindow(QMainWindow):
         """정보 다이얼로그 표시"""
         QMessageBox.about(
             self,
-            "LnxTerm 정보",
-            "<h3>LnxTerm 시리얼 터미널</h3>"
-            f"<p>버전: {self.APP_VERSION}</p>"
-            "<p>ST-Link V3 Mini 기반 임베디드 장치<br>"
-            "디버그 및 로그 수집을 위한 시리얼 터미널</p>"
-            "<p><b>기능:</b></p>"
-            "<ul>"
-            "<li>시리얼 포트 연결 및 명령 전송</li>"
-            "<li>밀리초 타임스탬프 포함 로그 기록</li>"
-            "<li>터미널 출력 검색</li>"
-            "</ul>"
+            tr(self._language, "about.title"),
+            tr(self._language, "about.body", version=self.APP_VERSION),
         )
 
     def _on_update_env_configs(self):
         """환경 변수 업데이트 실행"""
         success = self._sidebar.save_configs_to_env(self._env_path)
         if success:
-             self._terminal.append_system_message("환경 변수(.env)가 업데이트되었습니다.\n")
-             QMessageBox.information(self, "완료", "환경 변수(.env)가 성공적으로 업데이트되었습니다.")
+            self._terminal.append_system_message(tr(self._language, "msg.env_updated"))
+            QMessageBox.information(
+                self,
+                tr(self._language, "dialog.done.title"),
+                tr(self._language, "dialog.done.body"),
+            )
         else:
-             mode = os.environ.get("AUTO_LOAD_MODE", "CONFIRM")
-             if mode == "IGNORE":
-                  QMessageBox.warning(self, "업데이트 불가", f"AUTO_LOAD_MODE가 '{mode}'로 설정되어 있어 환경 변수를 업데이트할 수 없습니다.")
-             else:
-                  QMessageBox.warning(self, "실패", "환경 변수 업데이트에 실패했습니다. (알 수 없는 오류)")
+            mode = os.environ.get("AUTO_LOAD_MODE", "CONFIRM")
+            if mode == "IGNORE":
+                QMessageBox.warning(
+                    self,
+                    tr(self._language, "dialog.update_unavailable.title"),
+                    tr(self._language, "dialog.update_unavailable.body", mode=mode),
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    tr(self._language, "dialog.failed.title"),
+                    tr(self._language, "dialog.failed.body"),
+                )
 
     def closeEvent(self, event):
         """창 닫기 이벤트"""
