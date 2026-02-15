@@ -1224,6 +1224,7 @@ class SidebarWidget(QFrame):
             full_started_at = counter["started_at"].strftime("%Y-%m-%d %H:%M:%S")
             started_text = tr(self._language, "sidebar.counter.start", timestamp=full_started_at)
             
+        counter["started_label"].setText(started_text)
         counter["started_label"].setStyleSheet(
             f"color: {label_color}; font-size: 11px; background-color: transparent; border: none;"
         )
