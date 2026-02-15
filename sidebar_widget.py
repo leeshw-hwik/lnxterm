@@ -829,7 +829,8 @@ class SidebarWidget(QFrame):
                 if isinstance(last_run_at, str):
                     ts_str = last_run_at
                 else:
-                    ts_str = last_run_at.strftime("%Y-%m-%d %H:%M:%S")
+                    # Include milliseconds (3 digits)
+                    ts_str = last_run_at.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 
                 last_run_lbl = QLabel(tr(self._language, "sidebar.auto.last_run", timestamp=ts_str))
                 last_run_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
