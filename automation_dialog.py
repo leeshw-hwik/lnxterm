@@ -71,7 +71,7 @@ class AutomationDialog(QDialog):
         basic_layout.addRow(self._name_label, self._name_input)
         
         self._interval_input = QSpinBox()
-        self._interval_input.setRange(0, 10000)
+        self._interval_input.setRange(0, 86400000) # 24 hours
         self._interval_input.setSuffix(" ms")
         self._interval_input.setValue(100)
         self._interval_label = QLabel()
@@ -88,6 +88,7 @@ class AutomationDialog(QDialog):
         self._pre_cmd_input.setMinimumHeight(60)
         self._pre_cmd_input.setAcceptRichText(False)
         self._pre_cmd_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._pre_cmd_input.textChanged.connect(self._update_pre_title)
         pre_layout.addWidget(self._pre_cmd_input)
         
         layout.addWidget(self._pre_group, 1)
@@ -114,7 +115,7 @@ class AutomationDialog(QDialog):
         delay_row.addWidget(self._delay_label)
         
         self._delay_input = QSpinBox()
-        self._delay_input.setRange(0, 3600000) # 1 hour
+        self._delay_input.setRange(0, 86400000) # 24 hours
         self._delay_input.setSuffix(" ms")
         self._delay_input.setValue(100)
         delay_row.addWidget(self._delay_input)
@@ -126,6 +127,7 @@ class AutomationDialog(QDialog):
         self._post_cmd_input.setMinimumHeight(60)
         self._post_cmd_input.setAcceptRichText(False)
         self._post_cmd_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._post_cmd_input.textChanged.connect(self._update_post_title)
         post_layout.addWidget(self._post_cmd_input)
         
         layout.addWidget(self._post_group, 2)
@@ -185,9 +187,9 @@ class AutomationDialog(QDialog):
     def _apply_language(self):
         self.setWindowTitle(tr(self._language, "automation.title"))
         self._basic_group.setTitle(tr(self._language, "automation.group.basic"))
-        self._pre_group.setTitle(tr(self._language, "automation.group.pre"))
+        self._update_pre_title()
         self._trigger_group.setTitle(tr(self._language, "automation.group.trigger"))
-        self._post_group.setTitle(tr(self._language, "automation.group.post"))
+        self._update_post_title()
         self._name_label.setText(tr(self._language, "automation.label.name"))
         self._interval_label.setText(tr(self._language, "automation.label.interval"))
         self._delay_label.setText(tr(self._language, "automation.label.delay"))
@@ -198,6 +200,26 @@ class AutomationDialog(QDialog):
         self._interval_input.setToolTip(tr(self._language, "automation.tooltip.interval"))
         self._cancel_btn.setText(f" {tr(self._language, 'automation.button.cancel')}")
         self._ok_btn.setText(f" {tr(self._language, 'automation.button.ok')}")
+
+    def _update_pre_title(self):
+        count = self._get_line_count(self._pre_cmd_input)
+        title = tr(self._language, "automation.group.pre")
+        if count > 0:
+            title += f" ({count})"
+        self._pre_group.setTitle(title)
+
+    def _update_post_title(self):
+        count = self._get_line_count(self._post_cmd_input)
+        title = tr(self._language, "automation.group.post")
+        if count > 0:
+            title += f" ({count})"
+        self._post_group.setTitle(title)
+
+    def _get_line_count(self, text_edit: QTextEdit) -> int:
+        text = text_edit.toPlainText().strip()
+        if not text:
+            return 0
+        return len(text.splitlines())
 
     def _make_icon(self, shape: str, color_hex: str) -> QIcon:
         pixmap = QPixmap(16, 16)

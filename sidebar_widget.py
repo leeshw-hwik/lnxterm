@@ -372,7 +372,10 @@ class SidebarWidget(QFrame):
             bottom_row.setContentsMargins(0, 0, 0, 0)
             bottom_row.setSpacing(4)
             
-            # Left: Info (Count / Start Time)
+            status_label.setAlignment(Qt.AlignmentFlag.AlignVCenter) # removed right align for tighter packing
+            action_layout.addWidget(status_label)
+            
+            # Left: Info (Count / Start Time / Last Time)
             info_layout = QVBoxLayout()
             info_layout.setContentsMargins(0, 0, 0, 0)
             info_layout.setSpacing(2)
@@ -384,6 +387,10 @@ class SidebarWidget(QFrame):
             started_at_label = QLabel(tr(self._language, "sidebar.counter.start_empty"))
             started_at_label.setStyleSheet(f"color: {COLORS['text_disabled']}; font-size: 11px; background-color: transparent; border: none;")
             info_layout.addWidget(started_at_label)
+
+            last_detected_label = QLabel(tr(self._language, "sidebar.counter.last_empty"))
+            last_detected_label.setStyleSheet(f"color: {COLORS['text_disabled']}; font-size: 11px; background-color: transparent; border: none;")
+            info_layout.addWidget(last_detected_label)
             
             bottom_row.addLayout(info_layout)
             bottom_row.addStretch()
@@ -474,11 +481,13 @@ class SidebarWidget(QFrame):
                 "input": text_input,
                 "count_label": count_label,
                 "started_label": started_at_label,
+                "last_detected_label": last_detected_label,
                 "status_label": status_label,
                 "toggle_btn": toggle_btn,
                 "reset_btn": reset_btn,
                 "count": 0,
                 "started_at": None,
+                "last_detected_at": None,
                 "is_running": False,
                 "is_stopped": False,
             })
@@ -626,7 +635,8 @@ class SidebarWidget(QFrame):
                 "delay": task_data.get("delay", 0),
                 "cmd_interval": task_data.get("cmd_interval", 0),
                 "enabled": task_data.get("enabled", False),
-                "trigger_count": 0
+                "trigger_count": 0,
+                "last_run_at": None,
             }
             self._automation_tasks.append(task)
         
@@ -719,6 +729,7 @@ class SidebarWidget(QFrame):
         dialog = AutomationDialog(self, language=self._language)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
+            data["last_run_at"] = None
             self._automation_tasks.append(data)
             self._refresh_automation_list()
             
@@ -780,10 +791,15 @@ class SidebarWidget(QFrame):
             else:
                 name_style = f"color: {COLORS['text_disabled']}; font-weight: normal;"
 
-            # Name & Count Layout
-            name_layout = QHBoxLayout()
-            name_layout.setContentsMargins(0, 0, 0, 0)
-            name_layout.setSpacing(4)
+            # Left Column (Name+Count Row, Last Run Row)
+            left_col = QVBoxLayout()
+            left_col.setContentsMargins(0, 0, 0, 0)
+            left_col.setSpacing(2)
+
+            # 1. Name + Count Row
+            name_row = QHBoxLayout()
+            name_row.setContentsMargins(0, 0, 0, 0)
+            name_row.setSpacing(4)
             
             name_btn = QPushButton(name_text)
             name_btn.setStyleSheet(f"""
@@ -799,16 +815,30 @@ class SidebarWidget(QFrame):
             """)
             name_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             name_btn.clicked.connect(lambda _, idx=i: self._edit_automation_task(idx))
-            name_layout.addWidget(name_btn)
+            name_row.addWidget(name_btn)
             
             count = task.get('trigger_count', 0)
             if count > 0:
                 count_lbl = QLabel(f"({count})")
                 count_lbl.setStyleSheet(f"color: {COLORS['success']}; font-weight: bold; font-size: 11px;")
-                name_layout.addWidget(count_lbl)
+                name_row.addWidget(count_lbl)
                 
-            name_layout.addStretch()
-            frame_layout.addLayout(name_layout, 1) # stretch
+            name_row.addStretch()
+            left_col.addLayout(name_row)
+
+            # 2. Last Run Row (New)
+            if task.get("last_run_at"):
+                last_run_at = task["last_run_at"]
+                if isinstance(last_run_at, str):
+                    ts_str = last_run_at
+                else:
+                    ts_str = last_run_at.strftime("%Y-%m-%d %H:%M:%S")
+                
+                last_run_lbl = QLabel(tr(self._language, "sidebar.auto.last_run", timestamp=ts_str))
+                last_run_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 10px;")
+                left_col.addWidget(last_run_lbl)
+
+            frame_layout.addLayout(left_col, 1) # Left col takes remaining space
             
             # Status text
             if is_enabled:
@@ -895,6 +925,7 @@ class SidebarWidget(QFrame):
                 # 시작 시 사전 명령 수행
                 pre_cmd = task.get('pre_cmd', '').strip()
                 if pre_cmd:
+                    task['last_run_at'] = datetime.now()
                     self.send_command_requested.emit(pre_cmd, task.get('cmd_interval', 0))
 
     def _stop_task(self, index: int):
@@ -926,6 +957,7 @@ class SidebarWidget(QFrame):
             if check_trigger in check_line:
                 # Triggered!
                 task['trigger_count'] = task.get('trigger_count', 0) + 1
+                task['last_run_at'] = datetime.now()
                 triggered_any = True
                 
                 delay_ms = task.get('delay', 0)
@@ -1195,8 +1227,21 @@ class SidebarWidget(QFrame):
             full_started_at = counter["started_at"].strftime("%Y-%m-%d %H:%M:%S")
             started_text = tr(self._language, "sidebar.counter.start", timestamp=full_started_at)
             
-        counter["started_label"].setText(started_text)
         counter["started_label"].setStyleSheet(
+            f"color: {label_color}; font-size: 11px; background-color: transparent; border: none;"
+        )
+
+        if counter["last_detected_at"] is None:
+            last_text = tr(self._language, "sidebar.counter.last_empty")
+        else:
+            if isinstance(counter["last_detected_at"], str):
+                 last_text = tr(self._language, "sidebar.counter.last", timestamp=counter["last_detected_at"])
+            else:
+                 full_last_at = counter["last_detected_at"].strftime("%H:%M:%S.%f")[:-3]
+                 last_text = tr(self._language, "sidebar.counter.last", timestamp=full_last_at)
+        
+        counter["last_detected_label"].setText(last_text)
+        counter["last_detected_label"].setStyleSheet(
             f"color: {label_color}; font-size: 11px; background-color: transparent; border: none;"
         )
 
@@ -1304,6 +1349,7 @@ class SidebarWidget(QFrame):
         counter = self._log_counters[index]
         counter["count"] = 0
         counter["started_at"] = None
+        counter["last_detected_at"] = None
         counter["is_running"] = False
         counter["is_stopped"] = False
         self._update_log_counter_ui(index)
@@ -1313,6 +1359,7 @@ class SidebarWidget(QFrame):
         counter = self._log_counters[index]
         counter["count"] = 0
         counter["started_at"] = 0
+        counter["last_detected_at"] = None
         counter["is_running"] = False
         counter["is_stopped"] = False
         counter["input"].setText("")
@@ -1399,6 +1446,13 @@ class SidebarWidget(QFrame):
             compare_keyword = keyword if self._case_sensitive_checkbox.isChecked() else keyword.lower()
             if compare_keyword in compare_line:
                 counter["count"] += 1
+                
+                # Update Last Detected
+                if line_timestamp:
+                    counter["last_detected_at"] = line_timestamp
+                else:
+                    counter["last_detected_at"] = datetime.now()
+                
                 self._append_counter_stats(
                     keyword,
                     counter["count"],
