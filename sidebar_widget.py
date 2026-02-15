@@ -372,9 +372,6 @@ class SidebarWidget(QFrame):
             bottom_row.setContentsMargins(0, 0, 0, 0)
             bottom_row.setSpacing(4)
             
-            status_label.setAlignment(Qt.AlignmentFlag.AlignVCenter) # removed right align for tighter packing
-            action_layout.addWidget(status_label)
-            
             # Left: Info (Count / Start Time / Last Time)
             info_layout = QVBoxLayout()
             info_layout.setContentsMargins(0, 0, 0, 0)
