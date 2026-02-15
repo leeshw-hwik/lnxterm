@@ -81,7 +81,7 @@ class CommandInput(QLineEdit):
 class MainWindow(QMainWindow):
     """메인 윈도우"""
 
-    APP_VERSION = "v1.8.5"
+    APP_VERSION = "v1.9.1"
     DEFAULT_RECONNECT_INTERVAL_MS = 3000
     ENV_RECONNECT_INTERVAL_MS = "RECONNECT_INTERVAL_MS"
     ENV_RECONNECT_INTERVAL_SEC = "RECONNECT_INTERVAL_SEC"

@@ -1,7 +1,7 @@
 # LnxTerm (Serial Terminal for Linux)
 
 ST-Link V3 Mini 기반 임베디드 장치 디버깅/로그 수집용 시리얼 터미널 GUI입니다.
-- 현재 작업 기준 버전: **v1.9.0**
+- 현재 작업 기준 버전: **v1.9.1**
 
 ## 핵심 기능
 

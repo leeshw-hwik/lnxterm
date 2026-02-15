@@ -1236,7 +1236,7 @@ class SidebarWidget(QFrame):
             if isinstance(counter["last_detected_at"], str):
                  last_text = tr(self._language, "sidebar.counter.last", timestamp=counter["last_detected_at"])
             else:
-                 full_last_at = counter["last_detected_at"].strftime("%H:%M:%S.%f")[:-3]
+                 full_last_at = counter["last_detected_at"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                  last_text = tr(self._language, "sidebar.counter.last", timestamp=full_last_at)
         
         counter["last_detected_label"].setText(last_text)
@@ -1448,7 +1448,11 @@ class SidebarWidget(QFrame):
                 
                 # Update Last Detected
                 if line_timestamp:
-                    counter["last_detected_at"] = line_timestamp
+                    # Strip brackets if present: [timestamp] -> timestamp
+                    ts_clean = line_timestamp.strip()
+                    if ts_clean.startswith("[") and ts_clean.endswith("]"):
+                        ts_clean = ts_clean[1:-1]
+                    counter["last_detected_at"] = ts_clean
                 else:
                     counter["last_detected_at"] = datetime.now()
                 
