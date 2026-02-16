@@ -3,59 +3,61 @@
 ST-Link V3 Mini 기반 임베디드 장치 디버깅/로그 수집용 시리얼 터미널 GUI.
 
 ## 현재 개발 기준
-- 기준 버전: **v1.9.1**
-- 이번 반영 목표:
-  1. UI 다국어(한국어/영어) 및 언어 저장 기능
-  2. Dark Theme 적용 (Qt Fusion Style, VS Code 스타일 색상)
-  3. 자동 명령 및 문자열 통계 UI 개선 (Timestamp 정밀도 등)
-  4. 메뉴 하이라이트 가독성 개선(VS Code Dark 계열)
+- 기준 버전: **v1.10.0**
+- 이번 반영 목표(완료):
+  1. `.env` 자동 생성 및 런타임 자동 저장 체계 확립
+  2. 자동 명령/문자열 통계 실행 조건 강화(연결 상태 가드)
+  3. 자동 명령 즉시 중지/`sleep(ms)` 지연 처리 추가
+  4. 매크로(자주 쓰는 명령어) 등록/실행 창 추가
+  5. 활성 창 복귀 시 명령 입력 포커스 자동 복원
 
 ## 기술 스택
 - Python 3.12 + PyQt6 + pyserial + python-dotenv
 - PyInstaller (`./build_exe.sh`)
-- GitHub CLI(`gh`) 릴리스 관리
 
 ## 설계 개요
 
-### 1) 다국어 계층
-- `i18n.py` 신설
-- `TRANSLATIONS`(ko/en) + `tr(language, key, **kwargs)` 헬퍼
-- `normalize_language()`로 안전한 언어 코드 정규화
+### 1) 환경변수 생명주기 관리
+- `.env` 미존재 시 실행 시점 자동 파일 생성
+- 기본 키 자동 초기화
+  - `RECONNECT_INTERVAL_MS=1000`
+  - `AUTO_LOAD_STRING_STATS=`
+  - `AUTO_LOAD_AUTO_COMMANDS=`
+  - `AUTO_LOAD_MACRO_COMMANDS=`
+- 설정 변경 시 즉시 `.env` 동기화
 
-### 2) 언어 상태 관리
-- `MainWindow`가 단일 언어 상태를 소유
-- `QSettings("LnxTerm", "LnxTerm")`에 `language` 저장
-- 앱 시작 시 저장값 로드, 없으면 `en`
-- 메뉴(`Language`) 액션으로 언어 전환
+### 2) 자동 명령 실행 엔진
+- 작업별 런타임 상태(`_timers`, `_run_generation`) 유지
+- `Stop` 시 예약 타이머 즉시 취소
+- `sleep(ms)` 파싱 및 후속 명령 지연 실행
+- 시작/편집 시 미연결 상태 차단
 
-### 3) 위젯별 적용 범위
-- `MainWindow`
-  - 메뉴, 상태 텍스트, 메시지박스, About, 시스템 메시지
-- `SidebarWidget`
-  - 그룹 타이틀, 툴팁, 카운터 상태/버튼/placeholder, 자동명령 목록
-- `SearchWidget`
-  - placeholder, 툴팁, 결과 없음 문구
-- `AutomationDialog`
-  - 그룹/라벨/placeholder/버튼 텍스트
+### 3) 문자열 통계 실행 정책
+- 문자열 통계 시작 버튼은 연결 상태에서만 동작
+- 키워드/상태 변경 시 즉시 `.env` 반영
 
-### 4) 메뉴 스타일 개선
-- `styles.py`에 메뉴 전용 색상 팔레트 추가
-- 선택/눌림 상태에서 텍스트 색 명시 (`menu_text_active`)
-- 배경 대비를 VS Code Dark 톤으로 보정
+### 4) 매크로 UI 계층
+- `macro_dialog.py` 신규 추가
+- 최대 1000개 명령어 등록, 설명 200자 제한
+- 번호 클릭 즉시 전송
+- 단축키 제공 범위 10개(`Ctrl+1~9`, `Ctrl+0`)
+
+### 5) 포커스 복원 UX
+- 활성 창 이벤트(`ActivationChange`)에서 명령 입력창 강제 포커스
 
 ## 현재 핵심 기능 현황
 
 | 기능 | 상태 |
 |------|------|
 | 시리얼 통신 | 포트 스캔/연결/해제/QThread 수신 |
-| 자동 재연결 | 환경변수 기반 주기(`MS`/`SEC`), 기본 3초 |
+| 자동 재연결 | 환경변수 기반 주기(`MS`/`SEC`), 기본 1초 |
 | 로그 파일 | 세션 고정 파일 유지, 재연결 append 재개 |
-| 문자열 통계 | 최대 10개, CSV 누적 기록 |
-| 자동 명령 | 트리거 기반 사후 명령 실행 |
+| 문자열 통계 | 최대 10개, CSV 누적 기록, 미연결 시작 차단 |
+| 자동 명령 | 트리거 기반 실행, `sleep(ms)` 지원, 즉시 중지 지원 |
+| 매크로 | 최대 1000개 등록/즉시 실행, 단축키 10개 |
 | 다국어 UI | 한국어/영어 전환 + 저장 복원 |
-| 메뉴 가독성 | VS Code Dark 스타일 선택 대비 개선 |
 
 ## 후속 계획
-1. i18n 키 분리(파일 분할) 및 누락 키 검사 자동화
-2. `sidebar_widget.py` 대형 클래스 분리 리팩토링
+1. 자동 명령/매크로 실행 이력 로그 패널 추가 검토
+2. `sidebar_widget.py` 자동 명령 로직 분리 리팩토링
 3. 타겟 Linux 환경에서 Qt 의존성 경고(`libxcb-cursor`, `libtiff`) 점검

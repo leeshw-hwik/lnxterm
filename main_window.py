@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QMenuBar, QMessageBox, QApplication, QFrame
 )
 from PyQt6.QtGui import QAction, QActionGroup, QShortcut, QKeySequence, QFont
-from PyQt6.QtCore import Qt, QTimer, QSettings
+from PyQt6.QtCore import Qt, QTimer, QSettings, QEvent
 
 from serial_manager import SerialManager
 from log_manager import LogManager
@@ -81,10 +81,13 @@ class CommandInput(QLineEdit):
 class MainWindow(QMainWindow):
     """메인 윈도우"""
 
-    APP_VERSION = "v1.9.1"
-    DEFAULT_RECONNECT_INTERVAL_MS = 3000
+    APP_VERSION = "v1.10.0"
+    DEFAULT_RECONNECT_INTERVAL_MS = 1000
     ENV_RECONNECT_INTERVAL_MS = "RECONNECT_INTERVAL_MS"
     ENV_RECONNECT_INTERVAL_SEC = "RECONNECT_INTERVAL_SEC"
+    ENV_AUTO_LOAD_STRING_STATS = "AUTO_LOAD_STRING_STATS"
+    ENV_AUTO_LOAD_AUTO_COMMANDS = "AUTO_LOAD_AUTO_COMMANDS"
+    ENV_AUTO_LOAD_MACRO_COMMANDS = "AUTO_LOAD_MACRO_COMMANDS"
 
     def __init__(self):
         super().__init__()
@@ -97,6 +100,7 @@ class MainWindow(QMainWindow):
 
         # .env 파일 로드 (실행 파일 디렉토리 우선)
         self._env_path = self._resolve_env_path()
+        self._ensure_env_file_defaults()
         load_dotenv(self._env_path, override=True)
         self._log_dir = os.path.abspath(
             os.path.expanduser(os.environ.get("LOG_DIR", "").strip())
@@ -154,6 +158,7 @@ class MainWindow(QMainWindow):
         )
 
         self._terminal.append_system_message(tr(self._language, "msg.select_port"))
+        QTimer.singleShot(0, self._focus_command_input)
 
     def _setup_menu_bar(self):
         """메뉴바 구성"""
@@ -251,6 +256,7 @@ class MainWindow(QMainWindow):
 
         # 사이드바
         self._sidebar = SidebarWidget(language=self._language)
+        self._sidebar.set_env_path(self._env_path)
         self._splitter.addWidget(self._sidebar)
 
         # 오른쪽 영역 (터미널 + 검색 + 입력)
@@ -327,6 +333,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F3"), self, lambda: self._search.find_next())
         # Shift+F3: 이전 검색
         QShortcut(QKeySequence("Shift+F3"), self, lambda: self._search.find_prev())
+
+    def _focus_command_input(self):
+        """명령 입력창에 포커스 지정."""
+        if hasattr(self, "_command_input"):
+            self._command_input.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
     def _connect_signals(self):
         """시그널 연결"""
@@ -550,6 +561,25 @@ class MainWindow(QMainWindow):
                 os.path.dirname(os.path.abspath(sys.executable)), ".env"
             )
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+
+    def _ensure_env_file_defaults(self):
+        """최초 실행 시 .env를 자동 생성하고 기본값을 채운다."""
+        env_exists = os.path.isfile(self._env_path)
+        env_dir = os.path.dirname(self._env_path)
+        if env_dir:
+            os.makedirs(env_dir, exist_ok=True)
+        if not env_exists:
+            with open(self._env_path, "a", encoding="utf-8"):
+                pass
+            defaults = {
+                self.ENV_RECONNECT_INTERVAL_MS: "1000",
+                self.ENV_AUTO_LOAD_STRING_STATS: "",
+                self.ENV_AUTO_LOAD_AUTO_COMMANDS: "",
+                self.ENV_AUTO_LOAD_MACRO_COMMANDS: "",
+            }
+            for key, value in defaults.items():
+                set_key(self._env_path, key, value)
+                os.environ[key] = value
 
     def _resolve_reconnect_interval_ms(self) -> int:
         """환경변수에서 자동 재연결 주기를 읽어 ms 단위로 반환."""
@@ -901,7 +931,21 @@ class MainWindow(QMainWindow):
             self._log.stop_logging()
         
         # 현재 설정 저장
-        # 모드가 IGNORE면 내부에서 False 반환하며 저장 안 함.
+        self._save_runtime_env()
         self._sidebar.save_configs_to_env(self._env_path)
             
         event.accept()
+
+    def _save_runtime_env(self):
+        """런타임 환경값 저장."""
+        set_key(self._env_path, self.ENV_RECONNECT_INTERVAL_MS, str(self._reconnect_interval_ms))
+        os.environ[self.ENV_RECONNECT_INTERVAL_MS] = str(self._reconnect_interval_ms)
+        if self._log_dir:
+            set_key(self._env_path, "LOG_DIR", self._log_dir)
+            os.environ["LOG_DIR"] = self._log_dir
+
+    def changeEvent(self, event):
+        """활성 창 전환 시 입력창 포커스 복원."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            QTimer.singleShot(0, self._focus_command_input)

@@ -1,40 +1,54 @@
-# Session Handoff: v1.9.1 UI 테마 변경 및 버전 업데이트
+# Session Handoff: v1.10.0 환경변수/자동명령/매크로 기능 반영
 
-## 1. 이번 세션 시도 및 성공 (Successes)
-### UI 테마 변경 (Dark Mode)
-- `Fusion` 스타일 및 `Dark Palette` 적용하여 VS Code와 유사한 일관된 다크 테마 구현
-- `MainWindow`: OS 타이틀바 제외 메뉴바 및 전체적인 UI 톤 조정 (Base: #1E1E1E, Window: #353535)
+## 1) 이번 세션 완료 항목
+### 버전 업데이트
+- 버전: `v1.10.0`
+- 적용 파일: `main.py`, `main_window.py`, `README.md`, `doc/*.md`
+- 버전 선정 이유:
+  - 신규 기능(매크로 창) 추가
+  - 자동 명령 실행 정책/환경변수 저장 정책 개선
+  - 기존 사용 방식은 유지되어 Minor 버전 상승이 적절
 
-### 버전 관리
-- `v1.9.1`로 버전 업데이트 (이전 핫픽스 포함 + 이번 UI 변경)
-- `README.md`, `PROJECT_STATUS.md`, `main.py`, `main_window.py` 버전 명시
+### 기능 구현
+1. 환경변수(.env) 자동 생성/저장
+- `.env` 미존재 시 실행 시점 자동 생성
+- 기본값 자동 생성:
+  - `RECONNECT_INTERVAL_MS=1000`
+  - `AUTO_LOAD_STRING_STATS=`
+  - `AUTO_LOAD_AUTO_COMMANDS=`
+  - `AUTO_LOAD_MACRO_COMMANDS=`
+- 설정 변경 시 즉시 `.env` 반영
 
-### 빌드 및 배포
-- 실행 파일 생성 완료: `dist/lnxterm` (약 57MB)
-- 정상 빌드 확인
+2. 자동 명령
+- 시작 시 자동 활성화 방지
+- 미연결 상태 시작 차단
+- `Stop` 시 예약 실행 즉시 취소
+- `sleep(ms)` 구문 처리 지원
 
-## 2. 다음 세션 To-Do (Next Steps)
-- [ ] 다크 테마 세부 조정 (필요 시)
-- [ ] 사용자 피드백 반영하여 기능 추가 개발
-- [ ] 문서화 지속 업데이트
-- `./build_exe.sh` 정상 실행
-- 산출물: `dist/lnxterm`
+3. 문자열 통계
+- 미연결 상태 시작 차단
 
-## 2. 실패 또는 보류 (Failures / Pending)
-- 치명적 실패 없음
-- 보류:
-  - 24시간 장기 지연 테스트 (단위 테스트 불가능, 실사용 검증 필요)
-  - `sidebar_widget.py` 리팩토링 (클래스 크기가 커짐, 추후 분리 필요)
+4. 매크로 기능
+- `macro_dialog.py` 신규 추가
+- 최대 1000개 등록, 설명 200자 제한
+- 번호 클릭 즉시 전송
+- 단축키 10개(`Ctrl+1~9`, `Ctrl+0`)
 
-## 3. 다음 단계 (Next Steps)
-1. 실환경 테스트
-- 장시간(24시간 이상) 동작 시 타이머 및 타임스탬프 정확도 확인
-- 다국어 UI에서 레이아웃 깨짐 여부 확인
+5. 포커스 UX
+- 비활성 -> 활성 전환 시 명령 입력창 자동 포커스
 
-2. 코드 구조 개선
-- `SidebarWidget` 내 자동 명령 로직 분리 (Manager 클래스 도입 검토)
-- `AutomationDialog` UI 폼(Form) 분리
+### 빌드 결과
+- 명령: `./build_exe.sh`
+- 산출물: `dist/lnxterm` (약 57MB)
+- 빌드 성공
 
-3. 유지보수
-- `requirements.txt` 최신화 점검
-- PyInstaller spec 파일 최적화 (불필요한 hook 제거 검토)
+## 2) 보류/리스크
+- PyInstaller 의존성 경고는 여전히 존재 가능
+  - `libxcb-cursor.so.0`
+  - `libtiff.so.5`
+- 자동 명령 장시간 지연 시나리오의 실기기 장시간 테스트 필요
+
+## 3) 다음 세션 To-Do
+1. 자동 명령/매크로 장시간 회귀 테스트
+2. 자동 명령 실행 이력 가시화(로그 패널) 검토
+3. `sidebar_widget.py` 자동 명령 로직 분리 리팩토링

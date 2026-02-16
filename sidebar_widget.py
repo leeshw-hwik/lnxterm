@@ -6,6 +6,7 @@ import csv
 import json
 import serial.tools.list_ports
 import os
+import re
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
@@ -20,6 +21,7 @@ from PyQt6.QtGui import QIntValidator, QPainter, QPixmap, QIcon, QColor, QFont, 
 from serial_manager import SerialManager
 from styles import COLORS
 from automation_dialog import AutomationDialog
+from macro_dialog import MacroDialog
 from i18n import normalize_language, tr
 
 
@@ -28,6 +30,11 @@ class SidebarWidget(QFrame):
 
     MAX_LOG_COUNTERS = 10
     MAX_AUTO_TASKS = 10
+    MAX_MACRO_COMMANDS = 1000
+    MAX_TASK_NAME_LENGTH = 40
+    TASK_NAME_LINE_LENGTH = 20
+    MAX_SLEEP_DELAY_MS = 99_999_999
+    SLEEP_COMMAND_PATTERN = re.compile(r"^sleep\s*\(\s*(\d+)\s*\)$", re.IGNORECASE)
 
     # 시그널
     connect_requested = pyqtSignal(dict)    # 연결 요청 (설정 딕셔너리)
@@ -55,6 +62,10 @@ class SidebarWidget(QFrame):
         # { "name": str, "pre_cmd": str, "trigger": str, "post_cmd": str, 
         #   "delay": int, "cmd_interval": int, "enabled": bool, "running": bool }
         self._automation_tasks = [] 
+        self._macro_commands = []
+        self._macro_dialog = None
+        self._env_path = ""
+        self._loading_env = False
 
         self._setup_ui()
 
@@ -96,6 +107,15 @@ class SidebarWidget(QFrame):
         self._auto_btn.setIcon(self._make_robot_icon())
         self._auto_btn.clicked.connect(self._add_automation_task)
         action_layout.addWidget(self._auto_btn)
+
+        self._macro_btn = QPushButton()
+        self._macro_btn.setObjectName("secondaryBtn")
+        self._macro_btn.setFixedSize(34, 34)
+        self._macro_btn.setIconSize(QSize(16, 16))
+        self._macro_btn.setToolTip(tr(self._language, "sidebar.tooltip.macro_manage"))
+        self._macro_btn.setIcon(self._make_macro_icon())
+        self._macro_btn.clicked.connect(self._open_macro_dialog)
+        action_layout.addWidget(self._macro_btn)
 
         action_layout.addStretch()
 
@@ -546,6 +566,7 @@ class SidebarWidget(QFrame):
         )
         self._clear_btn.setToolTip(tr(self._language, "sidebar.tooltip.clear_terminal"))
         self._auto_btn.setToolTip(tr(self._language, "sidebar.tooltip.auto_manage"))
+        self._macro_btn.setToolTip(tr(self._language, "sidebar.tooltip.macro_manage"))
         self._refresh_btn.setToolTip(tr(self._language, "sidebar.tooltip.refresh_ports"))
         self._log_copy_btn.setToolTip(tr(self._language, "sidebar.tooltip.copy_log_path"))
         self._stats_copy_btn.setToolTip(tr(self._language, "sidebar.tooltip.copy_stats_path"))
@@ -571,6 +592,12 @@ class SidebarWidget(QFrame):
         if self._port_combo.count() == 1 and self._port_combo.itemData(0) is None:
             self._port_combo.setItemText(0, tr(self._language, "sidebar.port_not_found"))
         self._refresh_automation_list()
+        if self._macro_dialog is not None:
+            self._macro_dialog.set_language(self._language)
+
+    def set_env_path(self, env_path: str):
+        """즉시 저장에 사용할 .env 경로 설정."""
+        self._env_path = env_path
 
     def load_configs_from_env(self):
         """환경 변수(.env)에서 문자열 통계 및 자동 명령 설정을 읽어와 적용"""
@@ -578,9 +605,12 @@ class SidebarWidget(QFrame):
         if mode == "IGNORE":
             return
 
+        self._loading_env = True
+
         # 1. 환경 변수 읽기
         raw_stats = os.environ.get("AUTO_LOAD_STRING_STATS", "").strip()
         raw_autos = os.environ.get("AUTO_LOAD_AUTO_COMMANDS", "").strip()
+        raw_macros = os.environ.get("AUTO_LOAD_MACRO_COMMANDS", "").strip()
 
         stats_list = [s.strip() for s in raw_stats.split(";") if s.strip()] if raw_stats else []
         autos_list = []
@@ -592,7 +622,17 @@ class SidebarWidget(QFrame):
             except json.JSONDecodeError:
                 print(f"Error parsing AUTO_LOAD_AUTO_COMMANDS: {raw_autos}")
 
-        if not stats_list and not autos_list:
+        macros_list = []
+        if raw_macros:
+            try:
+                macros_list = json.loads(raw_macros)
+                if not isinstance(macros_list, list):
+                    macros_list = []
+            except json.JSONDecodeError:
+                print(f"Error parsing AUTO_LOAD_MACRO_COMMANDS: {raw_macros}")
+
+        if not stats_list and not autos_list and not macros_list:
+            self._loading_env = False
             return
 
         # 2. 사용자 확인 (CONFIRM 모드)
@@ -609,6 +649,7 @@ class SidebarWidget(QFrame):
                 QMessageBox.StandardButton.Yes
             )
             if reply != QMessageBox.StandardButton.Yes:
+                self._loading_env = False
                 return
 
         # 3. 데이터 적용
@@ -623,22 +664,19 @@ class SidebarWidget(QFrame):
             if len(self._automation_tasks) >= self.MAX_AUTO_TASKS:
                 break
             
-            # 필수 필드 보정 및 기본값 채우기
-            task = {
-                "name": task_data.get("name", tr(self._language, "automation.default_name")),
-                "pre_cmd": task_data.get("pre_cmd", ""),
-                "trigger": task_data.get("trigger", ""),
-                "post_cmd": task_data.get("post_cmd", ""),
-                "delay": task_data.get("delay", 0),
-                "cmd_interval": task_data.get("cmd_interval", 0),
-                "enabled": task_data.get("enabled", False),
-                "trigger_count": 0,
-                "last_run_at": None,
-            }
+            task = self._build_automation_task(task_data)
+            # 시작 시 자동으로 실행되지 않도록 강제 비활성화
+            task["enabled"] = False
             self._automation_tasks.append(task)
         
         if autos_list:
             self._refresh_automation_list()
+
+        self._macro_commands = self._sanitize_macro_commands(macros_list)
+        if self._macro_dialog is not None:
+            self._macro_dialog.set_commands(self._macro_commands)
+
+        self._loading_env = False
 
     # (Existing Methods: refresh_ports, _on_connect_clicked, ...)
 
@@ -653,12 +691,118 @@ class SidebarWidget(QFrame):
         painter.end()
         return QIcon(pixmap)
 
+    def _make_macro_icon(self, size: int = 16) -> QIcon:
+        """매크로 아이콘 생성."""
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setFont(QFont("Noto Sans Emoji", 11))
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "⭐")
+        painter.end()
+        return QIcon(pixmap)
+
+    def _open_macro_dialog(self):
+        """매크로 등록/실행 창 열기 (모델리스)."""
+        if self._macro_dialog is None:
+            self._macro_dialog = MacroDialog(self, language=self._language)
+            self._macro_dialog.send_requested.connect(self._send_macro_command)
+            self._macro_dialog.commands_changed.connect(self._on_macro_commands_changed)
+
+        self._macro_dialog.set_language(self._language)
+        self._macro_dialog.set_commands(self._macro_commands)
+        self._macro_dialog.show()
+        self._macro_dialog.raise_()
+        self._macro_dialog.activateWindow()
+
+    def _send_macro_command(self, command: str):
+        """매크로 명령 즉시 전송."""
+        if not command.strip():
+            return
+        if not self._is_connected:
+            self._show_connection_required_warning("sidebar.dialog.connection_required.macro")
+            return
+        self.send_command_requested.emit(command, 0)
+
+    def _on_macro_commands_changed(self, commands):
+        self._macro_commands = self._sanitize_macro_commands(commands)
+        self._save_env_if_ready()
+
+    def _sanitize_macro_commands(self, commands):
+        """매크로 목록 정규화."""
+        sanitized = []
+        for item in commands:
+            if len(sanitized) >= self.MAX_MACRO_COMMANDS:
+                break
+            if not isinstance(item, dict):
+                continue
+            command = str(item.get("command", "")).strip()
+            description = str(item.get("description", "")).strip()[:200]
+            if not command and not description:
+                continue
+            sanitized.append({"command": command, "description": description})
+        return sanitized
+
+    def _save_env_if_ready(self):
+        """입력 변경 즉시 .env 저장."""
+        if self._loading_env:
+            return
+        if not self._env_path:
+            return
+        self.save_configs_to_env(self._env_path)
+
+    def _build_automation_task(self, task_data: dict):
+        """자동 명령 데이터 정규화 및 런타임 필드 보강."""
+        delay_value = self._safe_non_negative_int(task_data.get("delay", 0))
+        interval_value = self._safe_non_negative_int(task_data.get("cmd_interval", 0))
+        return {
+            "name": self._normalize_task_name(task_data.get("name", tr(self._language, "automation.default_name"))),
+            "pre_cmd": task_data.get("pre_cmd", ""),
+            "trigger": task_data.get("trigger", ""),
+            "post_cmd": task_data.get("post_cmd", ""),
+            "delay": delay_value,
+            "cmd_interval": interval_value,
+            "enabled": bool(task_data.get("enabled", False)),
+            "trigger_count": self._safe_non_negative_int(task_data.get("trigger_count", 0)),
+            "last_run_at": task_data.get("last_run_at"),
+            "_timers": [],
+            "_run_generation": 0,
+        }
+
+    def _normalize_task_name(self, name: str) -> str:
+        normalized = str(name or "").strip()
+        if not normalized:
+            normalized = tr(self._language, "automation.default_name")
+        return normalized[:self.MAX_TASK_NAME_LENGTH]
+
+    def _format_task_display_name(self, name: str) -> str:
+        normalized = self._normalize_task_name(name)
+        if len(normalized) <= self.TASK_NAME_LINE_LENGTH:
+            return normalized
+        lines = []
+        for index in range(0, len(normalized), self.TASK_NAME_LINE_LENGTH):
+            lines.append(normalized[index:index + self.TASK_NAME_LINE_LENGTH])
+        return "\n".join(lines[:2])
+
+    def _show_connection_required_warning(self, body_key: str):
+        QMessageBox.warning(
+            self,
+            tr(self._language, "sidebar.dialog.connection_required.title"),
+            tr(self._language, body_key),
+        )
+
+    @staticmethod
+    def _safe_non_negative_int(value, default: int = 0) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if parsed >= 0 else 0
+
     # === 환경 변수 저장 (앱 종료 시 호출) ===
     
     def save_configs_to_env(self, env_path: str):
         """현재 문자열 통계 및 자동 명령 설정을 .env 파일에 저장"""
-        mode = os.environ.get("AUTO_LOAD_MODE", "CONFIRM").upper()
-
         # 1. 문자열 통계 수집
         stats_list = []
         for i, item in enumerate(self._log_counters):
@@ -680,34 +824,37 @@ class SidebarWidget(QFrame):
                 "enabled": task.get("enabled", False)
             }
             autos_list.append(saved_task)
-        
-        # 3. .env 파일 업데이트 (main_window에서 import set_key 했으므로 여기서도 사용 가능? No, import needed within this file or pass dependency)
-        # However, SidebarWidget doesn't import set_key. Let's add import or do it in MainWindow. 
-        # But this method is in Sidebar. Let's return the data and let MainWindow save it, Or import set_key here.
-        # Ideally Sidebar shouldn't know about .env path. But current design passes logic to Sidebar load_configs_from_env.
-        # Let's stick to Sidebar having logic.
-        
+
+        macro_list = self._sanitize_macro_commands(self._macro_commands)
+
         from dotenv import set_key
-        
-        # IGNORE 모드 처리
-        if mode == "IGNORE":
-            # 요구사항 변경: IGNORE 모드인 경우 프로그램 종료 시 .env 업데이트 안 함.
-            # 메뉴에서 강제 저장 호출 시에도 안 함 (또는 에러 메시지?)
-            # 함수 인자로 force 여부를 받거나, 리턴값으로 처리.
+
+        try:
+            # 문자열 통계 저장
+            stats_str = ";".join(stats_list)
+            set_key(env_path, "AUTO_LOAD_STRING_STATS", stats_str)
+            os.environ["AUTO_LOAD_STRING_STATS"] = stats_str
+            
+            # 자동 명령 저장
+            if autos_list:
+                import json
+                autos_str = json.dumps(autos_list, ensure_ascii=False)
+                set_key(env_path, "AUTO_LOAD_AUTO_COMMANDS", autos_str)
+                os.environ["AUTO_LOAD_AUTO_COMMANDS"] = autos_str
+            else:
+                set_key(env_path, "AUTO_LOAD_AUTO_COMMANDS", "")
+                os.environ["AUTO_LOAD_AUTO_COMMANDS"] = ""
+
+            if macro_list:
+                macro_str = json.dumps(macro_list, ensure_ascii=False)
+                set_key(env_path, "AUTO_LOAD_MACRO_COMMANDS", macro_str)
+                os.environ["AUTO_LOAD_MACRO_COMMANDS"] = macro_str
+            else:
+                set_key(env_path, "AUTO_LOAD_MACRO_COMMANDS", "")
+                os.environ["AUTO_LOAD_MACRO_COMMANDS"] = ""
+        except OSError:
             return False
 
-        # 문자열 통계 저장
-        stats_str = ";".join(stats_list)
-        set_key(env_path, "AUTO_LOAD_STRING_STATS", stats_str)
-        
-        # 자동 명령 저장
-        if autos_list:
-            import json
-            autos_str = json.dumps(autos_list, ensure_ascii=False)
-            set_key(env_path, "AUTO_LOAD_AUTO_COMMANDS", autos_str)
-        else:
-            set_key(env_path, "AUTO_LOAD_AUTO_COMMANDS", "")
-            
         return True
 
     # === 자동 명령 수행 관리 ===
@@ -725,41 +872,44 @@ class SidebarWidget(QFrame):
         # 빈 태스크로 다이얼로그 열기
         dialog = AutomationDialog(self, language=self._language)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            data = dialog.get_data()
-            data["last_run_at"] = None
-            self._automation_tasks.append(data)
+            task = self._build_automation_task(dialog.get_data())
+            task["last_run_at"] = None
+            self._automation_tasks.append(task)
             self._refresh_automation_list()
-            
-            # 사전 명령 즉시 실행 여부: 
-            # requirement doesn't specify when "start" happens. 
-            # "Name click to edit". "Status display".
-            # Assuming tasks are "active" immediately if enabled?
-            # Or should there be a global "Start Automation" toggle?
-            # Requirement 9: "Execute... interval".
-            # Let's assume enabling a task makes it active immediately.
-            # And execute pre-cmd immediately if enabled?
-            if data['enabled'] and data['pre_cmd'].strip():
-                # "사전 명령 (시작 시 수행)" - probably when task is created or enabled?
-                # For safety, maybe execute when added/enabled.
-                self.send_command_requested.emit(data['pre_cmd'], data['cmd_interval'])
+            self._save_env_if_ready()
+
+            if task["enabled"]:
+                if not self._is_connected:
+                    task["enabled"] = False
+                    self._refresh_automation_list()
+                    self._show_connection_required_warning("sidebar.dialog.connection_required.auto")
+                    self._save_env_if_ready()
+                else:
+                    self._run_task_command_set(task, task.get("pre_cmd", ""))
 
     def _edit_automation_task(self, index: int):
         """기존 자동 명령 수정"""
         if index < 0 or index >= len(self._automation_tasks):
             return
             
-        task = self._automation_tasks[index]
-        dialog = AutomationDialog(self, task, language=self._language)
+        prev_task = self._automation_tasks[index]
+        dialog = AutomationDialog(self, prev_task, language=self._language)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            new_data = dialog.get_data()
-            self._automation_tasks[index] = new_data
+            self._cancel_task_commands(prev_task)
+            new_task = self._build_automation_task(dialog.get_data())
+            new_task["trigger_count"] = prev_task.get("trigger_count", 0)
+            self._automation_tasks[index] = new_task
             self._refresh_automation_list()
-            
-            # If re-enabled or just edited, do we re-run pre-cmd?
-            # Maybe ask user or just run if enabled?
-            # Let's run pre-cmd if enabled, assuming it's an initialization.
-            if new_data['enabled'] and new_data['pre_cmd'].strip():
-                self.send_command_requested.emit(new_data['pre_cmd'], new_data['cmd_interval'])
+            self._save_env_if_ready()
+
+            if new_task["enabled"]:
+                if not self._is_connected:
+                    new_task["enabled"] = False
+                    self._refresh_automation_list()
+                    self._show_connection_required_warning("sidebar.dialog.connection_required.auto")
+                    self._save_env_if_ready()
+                else:
+                    self._run_task_command_set(new_task, new_task.get("pre_cmd", ""))
 
     def _refresh_automation_list(self):
         """자동 명령 목록 UI 갱신"""
@@ -780,7 +930,7 @@ class SidebarWidget(QFrame):
             frame_layout.setSpacing(8)
             
             # Name (Clickable)
-            name_text = task['name']
+            name_text = self._normalize_task_name(task["name"])
             is_enabled = task['enabled']
             
             if is_enabled:
@@ -798,7 +948,8 @@ class SidebarWidget(QFrame):
             name_row.setContentsMargins(0, 0, 0, 0)
             name_row.setSpacing(4)
             
-            name_btn = QPushButton(name_text)
+            name_btn = QPushButton(self._format_task_display_name(name_text))
+            name_btn.setToolTip(name_text)
             name_btn.setStyleSheet(f"""
                 QPushButton {{
                     background-color: transparent;
@@ -909,22 +1060,25 @@ class SidebarWidget(QFrame):
     def _delete_automation_task(self, index: int):
         """자동 명령 삭제"""
         if 0 <= index < len(self._automation_tasks):
+            task = self._automation_tasks[index]
+            self._cancel_task_commands(task)
             self._automation_tasks.pop(index)
             self._refresh_automation_list()
+            self._save_env_if_ready()
 
     def _start_task(self, index: int):
         """자동 명령 시작"""
         if 0 <= index < len(self._automation_tasks):
             task = self._automation_tasks[index]
+            if not self._is_connected:
+                self._show_connection_required_warning("sidebar.dialog.connection_required.auto")
+                return
             if not task['enabled']:
                 task['enabled'] = True
+                self._cancel_task_commands(task)
                 self._refresh_automation_list()
-                
-                # 시작 시 사전 명령 수행
-                pre_cmd = task.get('pre_cmd', '').strip()
-                if pre_cmd:
-                    task['last_run_at'] = datetime.now()
-                    self.send_command_requested.emit(pre_cmd, task.get('cmd_interval', 0))
+                self._save_env_if_ready()
+                self._run_task_command_set(task, task.get("pre_cmd", ""))
 
     def _stop_task(self, index: int):
         """자동 명령 정지"""
@@ -932,7 +1086,9 @@ class SidebarWidget(QFrame):
             task = self._automation_tasks[index]
             if task['enabled']:
                 task['enabled'] = False
+                self._cancel_task_commands(task)
                 self._refresh_automation_list()
+                self._save_env_if_ready()
 
     def process_log_line_for_automation(self, line: str):
         """로그 라인 트리거 검사 및 사후 명령 예약"""
@@ -958,21 +1114,130 @@ class SidebarWidget(QFrame):
                 task['last_run_at'] = datetime.now()
                 triggered_any = True
                 
-                delay_ms = task.get('delay', 0)
-                cmd_interval = task.get('cmd_interval', 0)
-                post_cmd = task.get('post_cmd', '')
-                
-                if delay_ms > 0:
-                    QTimer.singleShot(
-                        delay_ms, 
-                        lambda c=post_cmd, i=cmd_interval: self.send_command_requested.emit(c, i)
-                    )
-                else:
-                    if post_cmd:
-                        self.send_command_requested.emit(post_cmd, cmd_interval)
+                delay_ms = max(0, int(task.get("delay", 0)))
+                self._run_task_command_set(
+                    task,
+                    task.get("post_cmd", ""),
+                    delay_before_first_command=delay_ms,
+                )
                         
         if triggered_any:
             self._refresh_automation_list()
+
+    def _parse_sleep_delay_ms(self, line: str):
+        match = self.SLEEP_COMMAND_PATTERN.match(line.strip())
+        if not match:
+            return None
+        try:
+            parsed = int(match.group(1))
+        except ValueError:
+            return None
+        if parsed < 0:
+            return 0
+        return min(parsed, self.MAX_SLEEP_DELAY_MS)
+
+    def _build_command_sequence(self, command_text: str, interval_ms: int):
+        """명령어와 sleep() 지시를 실행 순서로 변환."""
+        interval = max(0, int(interval_ms))
+        sequence = []
+        pending_sleep = 0
+        command_count = 0
+
+        for raw_line in command_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            sleep_ms = self._parse_sleep_delay_ms(line)
+            if sleep_ms is not None:
+                pending_sleep = min(self.MAX_SLEEP_DELAY_MS, pending_sleep + sleep_ms)
+                continue
+
+            if command_count == 0:
+                delay_before = pending_sleep
+            elif pending_sleep > 0:
+                delay_before = pending_sleep
+            else:
+                delay_before = interval
+
+            sequence.append((delay_before, line))
+            pending_sleep = 0
+            command_count += 1
+
+        return sequence
+
+    def _can_run_task(self, task: dict, generation: int) -> bool:
+        return (
+            task in self._automation_tasks
+            and task.get("enabled", False)
+            and task.get("_run_generation", 0) == generation
+            and self._is_connected
+        )
+
+    def _register_task_timer(self, task: dict, delay_ms: int, callback):
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+
+        def _on_timeout():
+            timers = task.get("_timers", [])
+            if timer in timers:
+                timers.remove(timer)
+            timer.deleteLater()
+            callback()
+
+        timer.timeout.connect(_on_timeout)
+        task.setdefault("_timers", []).append(timer)
+        timer.start(max(0, int(delay_ms)))
+
+    def _run_task_sequence(self, task: dict, sequence, position: int, generation: int):
+        if position >= len(sequence):
+            return
+        if not self._can_run_task(task, generation):
+            return
+
+        delay_before, command = sequence[position]
+
+        def _emit_and_continue():
+            if not self._can_run_task(task, generation):
+                return
+            self.send_command_requested.emit(command, 0)
+            if task in self._automation_tasks:
+                task["last_run_at"] = datetime.now()
+                self._refresh_automation_list()
+            self._run_task_sequence(task, sequence, position + 1, generation)
+
+        if delay_before <= 0:
+            _emit_and_continue()
+        else:
+            self._register_task_timer(task, delay_before, _emit_and_continue)
+
+    def _run_task_command_set(
+        self,
+        task: dict,
+        command_text: str,
+        delay_before_first_command: int = 0,
+    ):
+        """사전/사후 명령 세트를 실행."""
+        sequence = self._build_command_sequence(command_text, task.get("cmd_interval", 0))
+        if not sequence:
+            return
+
+        first_delay, first_command = sequence[0]
+        sequence[0] = (
+            min(self.MAX_SLEEP_DELAY_MS, max(0, int(delay_before_first_command)) + first_delay),
+            first_command,
+        )
+        generation = task.get("_run_generation", 0)
+        self._run_task_sequence(task, sequence, 0, generation)
+
+    def _cancel_task_commands(self, task: dict):
+        """실행 대기 중인 자동 명령 타이머를 즉시 중지."""
+        task["_run_generation"] = int(task.get("_run_generation", 0)) + 1
+        timers = list(task.get("_timers", []))
+        task["_timers"] = []
+        for timer in timers:
+            timer.stop()
+            timer.deleteLater()
 
     # ... Existing helper methods (_make_copy_icon, _update_log_counter_label etc) ...
 
@@ -1081,6 +1346,10 @@ class SidebarWidget(QFrame):
     def set_connected_state(self, connected: bool):
         """연결 상태 UI 업데이트"""
         self._is_connected = connected
+        if not connected:
+            for task in self._automation_tasks:
+                self._cancel_task_commands(task)
+
         if connected:
             self._connect_btn.setObjectName("disconnectBtn")
             self._connect_btn.setIcon(
@@ -1331,6 +1600,10 @@ class SidebarWidget(QFrame):
 
     def _start_log_counter(self, index: int):
         """특정 카운터 집계 시작"""
+        if not self._is_connected:
+            self._show_connection_required_warning("sidebar.dialog.connection_required.stats")
+            return
+
         counter = self._log_counters[index]
         keyword = counter["input"].text().strip()
         if not keyword:
@@ -1342,6 +1615,7 @@ class SidebarWidget(QFrame):
         counter["is_stopped"] = False
         self._set_counter_readonly(index, True)
         self._update_log_counter_ui(index)
+        self._save_env_if_ready()
 
     def _on_log_keyword_changed(self, index: int):
         """입력값 변경 시 해당 통계 초기 상태로 전환"""
@@ -1352,6 +1626,7 @@ class SidebarWidget(QFrame):
         counter["is_running"] = False
         counter["is_stopped"] = False
         self._update_log_counter_ui(index)
+        self._save_env_if_ready()
 
     def _reset_log_counter(self, index: int):
         """특정 카운터 초기화"""
@@ -1377,6 +1652,7 @@ class SidebarWidget(QFrame):
         counter["is_stopped"] = True
         self._set_counter_readonly(index, True)
         self._update_log_counter_ui(index)
+        self._save_env_if_ready()
 
     def _append_counter_stats(self, keyword: str, count: int, timestamp: str | None, log_line: str):
         """통계 변경 내역을 CSV 파일에 저장"""

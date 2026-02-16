@@ -67,6 +67,7 @@ class AutomationDialog(QDialog):
         basic_layout.setSpacing(8)
         
         self._name_input = QLineEdit()
+        self._name_input.setMaxLength(40)
         self._name_label = QLabel()
         basic_layout.addRow(self._name_label, self._name_input)
         
